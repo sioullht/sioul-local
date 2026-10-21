@@ -1,4 +1,4 @@
-# Coded RAG
+# s(i)oul.local
 
 Eigenes RAG-System mit Chat-Interface im s(i)oul.ai-Design.
 Zwei Modi: **Chat** (freies Gespräch mit dem Modell) und **RAG** (Antworten nur aus `cat-facts.txt`).
@@ -13,8 +13,8 @@ Zwei Modi: **Chat** (freies Gespräch mit dem Modell) und **RAG** (Antworten nur
 ## Installation
 
 ```bash
-git clone https://github.com/sioullht/Coded_RAG.git
-cd Coded_RAG
+git clone https://github.com/sioullht/sioul-local.git
+cd sioul-local
 
 # Python-Pakete
 python3.12 -m pip install -r requirements.txt
