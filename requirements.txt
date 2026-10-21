@@ -1,0 +1,5 @@
+fastapi==0.156.8
+uvicorn==0.54.0
+ollama==0.6.3
+qdrant-client==1.19.1
+pydantic==2.14.1
