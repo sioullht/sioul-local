@@ -1,0 +1,1650 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>s(i)oul.ai</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%237c5cff'/%3E%3Cstop offset='1' stop-color='%233b8fd4'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='32' cy='34' r='24' fill='none' stroke='url(%23g)' stroke-width='7' stroke-linecap='round' stroke-dasharray='118 32.8' transform='rotate(-52 32 34)'/%3E%3Cline x1='32' y1='25' x2='32' y2='44' stroke='%23ececec' stroke-width='7' stroke-linecap='round'/%3E%3Ccircle cx='32' cy='9' r='4.5' fill='%235ad1c8'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --brand-purple: #7c5cff;
+    --brand-blue: #3b8fd4;
+    --brand-teal: #5ad1c8;
+    /* Palette "Nachtviolett": fast schwarz mit leichtem Lila-Stich */
+    --bg: #110f17;
+    --sidebar: #15121d;
+    --panel: #1c1826;
+    --panel-hover: #262033;
+    --border: #2b2540;
+    --text: #ebe7f5;
+    --muted: #8a83a1;
+    --user-bubble: #231d33;
+    --accent: #c9b8ff;
+    --danger: #e5786d;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background:
+      radial-gradient(1100px 600px at 50% -10%, rgba(124, 92, 255, .10), transparent 70%),
+      radial-gradient(700px 500px at 100% 110%, rgba(90, 209, 200, .04), transparent 70%),
+      var(--bg);
+    color: var(--text);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    overflow: hidden;
+  }
+  button { font: inherit; }
+
+  /* ---------- Zeitspirale (Chat-Verlauf) ---------- */
+  .spiral {
+    position: fixed; inset: 0; z-index: 20;
+    background: rgba(10, 8, 16, .82);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    opacity: 0; pointer-events: none; transition: opacity .25s ease;
+  }
+  .spiral.open { opacity: 1; pointer-events: auto; }
+  .spiral svg.track { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .spiral .path {
+    fill: none; stroke: url(#spiralLine); stroke-width: 1.6; stroke-linecap: round;
+    stroke-dasharray: var(--len); stroke-dashoffset: var(--len);
+  }
+  .spiral.open .path { transition: stroke-dashoffset 1.1s cubic-bezier(.2,.7,.2,1); stroke-dashoffset: 0; }
+
+  /* Zoombare Welt: Punkte und Titel liegen im SVG und wachsen mit */
+  .world { transition: opacity .5s ease .35s; opacity: 0; }
+  .spiral.open .world { opacity: 1; }
+  .item { cursor: pointer; }
+  .item .dot { transition: filter .2s; }
+  .item.hl .dot { filter: drop-shadow(0 0 6px rgba(124,92,255,.9)); }
+  .ctext {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-weight: 500; fill: var(--text); transition: fill .15s;
+  }
+  .item.hl .ctext { fill: #fff; }
+  .item.active .ctext { fill: var(--brand-teal); }
+  .start { cursor: pointer; }
+  .start circle { fill: rgba(124,92,255,.10); stroke: rgba(201,184,255,.55); stroke-width: 1.5; stroke-dasharray: 4 3; transition: fill .2s; }
+  .start:hover circle { fill: rgba(124,92,255,.25); }
+  .start path { stroke: var(--accent); stroke-width: 2; stroke-linecap: round; }
+  .start text { fill: var(--muted); font: 12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+
+  .zoom-ctl {
+    position: absolute; right: 20px; bottom: 18px; display: flex; align-items: center; gap: 4px;
+    background: rgba(28,24,38,.75); border: 1px solid var(--border); border-radius: 12px; padding: 4px 6px;
+    color: var(--muted); font-size: 12px;
+  }
+  .zoom-ctl button {
+    background: none; border: 0; color: var(--text); cursor: pointer; width: 28px; height: 28px; border-radius: 8px;
+    font-size: 17px; line-height: 1; display: inline-flex; align-items: center; justify-content: center;
+  }
+  .zoom-ctl button:hover:not(:disabled) { background: var(--panel-hover); }
+  .zoom-ctl button:disabled { opacity: .3; cursor: default; }
+  .zoom-ctl svg { width: 15px; height: 15px; }
+  #zoomLevel { min-width: 52px; text-align: center; font-variant-numeric: tabular-nums; }
+  .zoom-hint { padding: 0 8px 0 4px; }
+  @media (max-width: 600px) { .zoom-hint { display: none; } }
+
+  .spiral-start {
+    position: absolute; transform: translate(-50%, -50%);
+    width: 44px; height: 44px; border-radius: 50%; cursor: pointer;
+    border: 1.5px dashed rgba(201,184,255,.55); background: rgba(124,92,255,.10);
+    color: var(--accent); display: inline-flex; align-items: center; justify-content: center;
+    transition: background .2s, transform .2s;
+  }
+  .spiral-start:hover { background: rgba(124,92,255,.25); transform: translate(-50%, -50%) scale(1.08); }
+  .spiral-start svg { width: 18px; height: 18px; }
+  .spiral-start-label { position: absolute; transform: translate(-50%, 30px); color: var(--muted); font-size: 12px; white-space: nowrap; }
+
+  .spiral-head { position: absolute; top: 22px; left: 28px; display: flex; align-items: center; gap: 12px; z-index: 5; pointer-events: none; }
+  .spiral .spiral-close, .spiral .zoom-ctl { z-index: 6; }
+  .spiral svg.track { cursor: grab; touch-action: none; }
+  .spiral.panning svg.track { cursor: grabbing; }
+  .spiral-head h2 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: .02em; color: var(--text); }
+  .spiral-head span { color: var(--muted); font-size: 13px; }
+  .spiral-close { position: absolute; top: 16px; right: 20px; }
+  .spiral-empty { position: absolute; left: 50%; top: 50%; transform: translate(-50%, 70px); color: var(--muted); font-size: 14px; }
+
+  /* ---------- Ausklappbare Chat-Liste in der Zeitspirale ---------- */
+  .drawer-toggle {
+    position: fixed; left: 50%; bottom: 6px; z-index: 9;
+    transform: translateX(-50%);
+    width: 52px; height: 34px; border: 0; border-radius: 12px; cursor: pointer;
+    background: transparent; color: var(--accent);
+    display: inline-flex; align-items: center; justify-content: center;
+    transition: bottom .4s cubic-bezier(.2,.7,.2,1), background .2s;
+  }
+  .drawer-toggle:hover { background: rgba(124,92,255,.14); }
+  .drawer-toggle { filter: drop-shadow(0 0 8px rgba(124,92,255,.55)); }
+  .drawer-toggle svg { width: 28px; height: 28px; transition: transform .4s cubic-bezier(.2,.7,.2,1); }
+  body.drawer-open .drawer-toggle { bottom: calc(var(--dh, 66vh) + 6px); }
+  .drawer-toggle { touch-action: none; cursor: grab; }
+  body.drawer-dragging .drawer-toggle { cursor: grabbing; }
+  body.drawer-dragging .drawer, body.drawer-dragging .drawer-toggle { transition: none !important; }
+  body.drawer-open .drawer-toggle svg { transform: rotate(180deg); }
+  .composer-wrap { padding-bottom: 42px !important; }
+
+  .drawer {
+    position: fixed; left: 50%; bottom: 0; z-index: 8;
+    width: min(780px, calc(100% - 24px)); height: var(--dh, 66vh);
+    transform: translate(-50%, 102%);
+    transition: transform .4s cubic-bezier(.2,.7,.2,1), height .4s cubic-bezier(.2,.7,.2,1);
+    background: var(--panel); border: 1px solid var(--border); border-bottom: 0;
+    border-radius: 20px 20px 0 0; box-shadow: 0 -20px 50px rgba(0,0,0,.45);
+    display: flex; flex-direction: column;
+  }
+  body.drawer-open .drawer { transform: translate(-50%, 0); }
+  .drawer-head { display: flex; align-items: center; gap: 28px; padding: 18px 20px 10px; }
+  .drawer-head h3 { margin: 0; font-size: 14px; font-weight: 600; white-space: nowrap; }
+  .drawer-search {
+    flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+    color: var(--text); font: inherit; font-size: 13px; padding: 7px 12px; outline: 0;
+  }
+  .drawer-search:focus { border-color: var(--brand-purple); }
+  .drawer-list { flex: 1; overflow-y: auto; padding: 0 10px 16px; }
+  .drawer-group { color: var(--muted); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 14px 10px 6px; }
+  .row {
+    display: flex; gap: 12px; align-items: center; width: 100%; text-align: left;
+    background: none; border: 0; color: var(--text); cursor: pointer;
+    padding: 8px 10px; border-radius: 12px;
+  }
+  .row:hover, .row:focus-visible { background: var(--panel-hover); outline: 0; }
+  .row .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--brand-purple); }
+  .row.active .dot { background: var(--brand-teal); box-shadow: 0 0 10px var(--brand-teal); }
+  .row .title { flex: 1; min-width: 0; font-size: 14px; font-weight: 550; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row .rename-input {
+    flex: 1; min-width: 0; font: inherit; font-size: 14px; color: var(--text);
+    background: var(--bg); border: 1px solid var(--brand-purple); border-radius: 8px; padding: 4px 8px; outline: 0;
+  }
+  .row .side { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; flex-shrink: 0; }
+  .row .time { color: var(--muted); font-size: 12px; }
+  .row .acts { display: flex; gap: 2px; }
+  .row .acts button {
+    background: none; border: 0; color: var(--muted); cursor: pointer; padding: 4px; border-radius: 6px; display: inline-flex;
+  }
+  .row .acts button:hover { color: var(--text); background: rgba(255,255,255,.06); }
+  .row .acts .del:hover { color: var(--danger); background: rgba(229,120,109,.14); }
+  .row .acts svg { width: 14px; height: 14px; }
+  .drawer-empty { color: var(--muted); font-size: 13px; padding: 24px 10px; text-align: center; }
+
+  .peek .p { color: var(--muted); font-size: 12.5px; line-height: 1.45; margin: -4px 0 10px;
+    display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+  .peek {
+    position: absolute; z-index: 2; width: 260px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 12px 14px; box-shadow: 0 16px 40px rgba(0,0,0,.5);
+    font-size: 13px; pointer-events: auto;
+  }
+  .peek .t { font-size: 14px; font-weight: 600; margin-bottom: 2px; overflow-wrap: anywhere; }
+  .peek .d { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+  .peek .btns { display: flex; gap: 6px; }
+  .peek button {
+    flex: 1; border: 0; border-radius: 8px; padding: 7px 10px; cursor: pointer; font-size: 13px;
+    background: var(--panel-hover); color: var(--text);
+  }
+  .peek button.primary { background: var(--accent); color: #1a1428; font-weight: 600; }
+  .peek button.danger:hover { background: rgba(229,120,109,.18); color: var(--danger); }
+
+  .icon-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: transparent; border: 0; color: var(--muted);
+    font-size: 14px; padding: 8px 10px; border-radius: 8px; cursor: pointer;
+  }
+  .icon-btn:hover { background: var(--panel); color: var(--text); }
+  .icon-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+  /* ---------- Hauptbereich ---------- */
+  .app { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+  header { padding: 10px 12px; display: flex; gap: 4px; position: relative; align-items: center; }
+
+  /* ---------- Schalter Chat | Dokumente ---------- */
+  .mode-switch {
+    position: absolute; left: 50%; top: 10px; transform: translateX(-50%);
+    display: grid; grid-template-columns: 1fr 1fr; padding: 3px; gap: 0;
+    background: rgba(28,24,38,.85); border: 1px solid var(--border); border-radius: 999px;
+  }
+  .mode-switch button {
+    position: relative; z-index: 1; border: 0; background: none; cursor: pointer;
+    color: var(--muted); font-size: 14px; padding: 6px 22px; border-radius: 999px; transition: color .25s;
+  }
+  .mode-switch button[aria-selected="true"] { color: var(--text); }
+  .mode-switch button:disabled { cursor: default; }
+  .mode-pill {
+    position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px);
+    border-radius: 999px; background: var(--panel-hover); border: 1px solid #3a3150;
+    transition: transform .3s cubic-bezier(.2,.7,.2,1);
+  }
+  body.mode-docs .mode-pill { transform: translateX(100%); }
+  body.mode-docs .uacts { display: none !important; }       /* Bearbeiten: nur im Chat-Modus */
+  .msg.bot .source { display: block; margin-top: 8px; color: var(--muted); font-size: 13px; }
+  @media (max-width: 640px) { .mode-switch button { padding: 6px 14px; } .brand { display: none; } }
+
+  main { flex: 1; overflow-y: auto; padding: 8px 16px 24px; }
+  .messages { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+  .msg { white-space: pre-wrap; word-wrap: break-word; }
+  .msg.user {
+    align-self: flex-end; background: var(--user-bubble);
+    padding: 10px 16px; border-radius: 18px; max-width: 80%;
+  }
+  /* Eigene Frage mit Bearbeiten-Stift darunter */
+  .uwrap { align-self: flex-end; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; max-width: 80%; }
+  .uwrap .msg.user { max-width: 100%; }
+  .uacts { display: flex; opacity: 0; transition: opacity .15s; margin-right: -4px; }
+  .uwrap:not(.editable) .uacts, .uwrap.is-editing .uacts { display: none; }
+  .uwrap.editable:hover .uacts, .uacts:focus-within { opacity: 1; }
+  .msg.user.editing {
+    width: min(620px, 72vw); padding: 12px 12px 10px 16px;
+    border: 1px solid var(--brand-purple); background: var(--panel);
+  }
+  .msg.user.editing textarea { display: block; min-height: 24px; }
+  .edit-row { display: flex; align-items: center; justify-content: flex-end; gap: 10px; margin-top: 6px; min-height: 36px; }
+  .edit-hint { color: var(--muted); font-size: 12px; margin-right: auto; }
+  .msg.bot { align-self: stretch; }
+  .msg.bot .note { display: block; margin-top: 8px; color: var(--muted); font-size: 13px; font-style: italic; }
+  .msg.error { color: var(--danger); }
+  .msg.stopped { color: var(--muted); font-style: italic; }
+
+  .typing { display: inline-flex; gap: 5px; padding: 6px 0; }
+  .typing span { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); animation: blink 1.2s infinite ease-in-out; }
+  .typing span:nth-child(2) { animation-delay: .2s; }
+  .typing span:nth-child(3) { animation-delay: .4s; }
+  @keyframes blink { 0%, 80%, 100% { opacity: .25; } 40% { opacity: 1; } }
+
+  .composer-wrap { padding: 0 16px 24px; }
+  .composer {
+    max-width: 760px; margin: 0 auto;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 24px;
+    padding: 14px 14px 10px 20px; display: flex; flex-direction: column; gap: 8px;
+  }
+  textarea {
+    width: 100%; resize: none; border: 0; outline: 0; background: transparent;
+    color: var(--text); font: inherit; max-height: 200px; min-height: 24px;
+  }
+  textarea::placeholder { color: var(--muted); }
+  .composer-row { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
+
+  /* ---------- Mikrofon ---------- */
+  .mic {
+    width: 36px; height: 36px; border-radius: 50%; border: 0; cursor: pointer;
+    background: transparent; color: var(--muted);
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .mic:hover { background: var(--panel-hover); color: var(--text); }
+  .mic svg { width: 19px; height: 19px; }
+  .mic.recording { background: var(--danger); color: #fff; animation: pulse 1.4s infinite; }
+  .mic.working { color: var(--brand-teal); cursor: progress; animation: spin-fade 1s infinite alternate; }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(229,120,109,.55); } 100% { box-shadow: 0 0 0 12px rgba(229,120,109,0); } }
+  @keyframes spin-fade { from { opacity: 1; } to { opacity: .35; } }
+
+  /* ---------- Vorlesen unter Antworten ---------- */
+  .msg-actions { display: flex; gap: 2px; margin-top: 6px; margin-left: -6px; }
+  .act {
+    background: none; border: 0; color: var(--muted); cursor: pointer;
+    padding: 6px; border-radius: 6px; display: inline-flex;
+  }
+  .act:hover { background: var(--panel); color: var(--text); }
+  .act svg { width: 16px; height: 16px; }
+  .act.on { color: var(--brand-teal); }
+  .act.loading { color: var(--brand-teal); animation: spin-fade .8s infinite alternate; }
+  .send {
+    width: 36px; height: 36px; border-radius: 50%; border: 0; cursor: pointer;
+    background: var(--accent); color: #1a1a1a;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .send:disabled { background: var(--panel-hover); color: var(--muted); cursor: default; }
+  .send svg { width: 18px; height: 18px; }
+  .send .stop-icon { display: none; }
+  .send.stopping .send-icon { display: none; }
+  .send.stopping .stop-icon { display: block; }
+
+  /* Leerer Zustand: Eingabe mittig */
+  .app.empty main { flex: 0; padding: 0; }
+  .app.empty .composer-wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding-bottom: 12vh; }
+  .app.empty .composer { width: 100%; }
+
+  /* ---------- Logo ---------- */
+  .wordmark {
+    font-weight: 900; letter-spacing: -0.03em; line-height: 1;
+    color: var(--text); white-space: nowrap;
+  }
+  .wordmark .p { color: var(--brand-purple); font-weight: 700; }
+  .wordmark .i { color: var(--brand-teal); }
+  .wordmark .tld { font-size: .38em; font-weight: 600; color: var(--muted); letter-spacing: 0; margin-left: .08em; }
+  .logo-icon { flex-shrink: 0; color: var(--text); }
+
+  .brand { display: inline-flex; align-items: center; padding: 0 10px; margin-left: auto; }
+  .brand .wordmark { font-size: 21px; }
+  .brand .tld { font-size: .55em; }
+
+  /* ---------- Konto unten links ---------- */
+  .account {
+    position: fixed; left: 16px; bottom: 16px; z-index: 5;
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 14px 6px 6px; border-radius: 14px;
+    background: rgba(28, 24, 38, .6); border: 1px solid var(--border);
+  }
+  .avatar { flex-shrink: 0; }
+
+  /* ---------- Modellauswahl ---------- */
+  .model-picker { position: relative; }
+  .model-btn { color: var(--text); font-weight: 600; font-size: 15px; }
+  .model-btn .size { color: var(--muted); font-weight: 400; }
+  .model-btn svg { width: 14px; height: 14px; color: var(--muted); }
+  .model-menu {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 10; min-width: 230px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+    padding: 6px; box-shadow: 0 10px 30px rgba(0,0,0,.45);
+  }
+  .model-opt {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    background: none; border: 0; color: var(--text); cursor: pointer;
+    padding: 9px 10px; border-radius: 8px; text-align: left; font-size: 14px;
+  }
+  .model-opt:hover { background: var(--panel-hover); }
+  .model-opt .name { flex: 1; display: flex; flex-direction: column; line-height: 1.3; }
+  .model-opt .base { color: var(--muted); font-size: 12px; }
+  .model-opt .size { color: var(--muted); font-size: 12px; }
+  .model-opt .check { width: 16px; color: var(--brand-teal); visibility: hidden; }
+  .model-opt.active .check { visibility: visible; }
+  [hidden] { display: none !important; }
+  .account-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+  .account-name { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .account-sub { font-size: 12px; color: var(--muted); }
+
+  /* ---------- Formatierte Antworten (Markdown) ---------- */
+  .msg.bot.md { white-space: normal; }
+  .md > :first-child { margin-top: 0; }
+  .md > :last-child { margin-bottom: 0; }
+  .md p { margin: 0 0 12px; }
+  .md h1, .md h2, .md h3, .md h4 { margin: 22px 0 8px; line-height: 1.3; font-weight: 650; }
+  .md h1 { font-size: 1.35em; } .md h2 { font-size: 1.22em; } .md h3 { font-size: 1.08em; } .md h4 { font-size: 1em; }
+  .md ul, .md ol { margin: 0 0 12px; padding-left: 22px; }
+  .md li { margin: 4px 0; }
+  .md strong { font-weight: 650; }
+  .md code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em; background: var(--panel); padding: 2px 6px; border-radius: 6px; }
+  .md pre { background: #111; border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; overflow-x: auto; margin: 0 0 12px; white-space: pre; }
+  .md pre code { background: none; padding: 0; font-size: 13px; }
+  .md blockquote { margin: 0 0 12px; padding-left: 14px; border-left: 3px solid var(--border); color: var(--muted); }
+  .md hr { border: 0; border-top: 1px solid var(--border); margin: 18px 0; }
+  .md a { color: var(--brand-teal); }
+  .app.empty .brand { visibility: hidden; }
+
+  .hero { display: none; flex-direction: column; align-items: center; gap: 16px; margin-bottom: 32px; }
+  .hero .wordmark { font-size: 44px; }
+  .app.empty .hero { display: flex; }
+  .app.empty .composer-wrap { flex-direction: column; }
+
+  .md pre { background: #0c0a12; }
+
+  /* Schmale Fenster */
+  @media (max-width: 800px) {
+    .msg.user { max-width: 90%; }
+    .account .account-text { display: none; }
+    .account { padding: 6px; }
+    .app:not(.empty) .account { display: none; }
+  }
+    /* Avatar neben jeder Bot-Antwort */
+  .msg.bot { position: relative; padding-left: 48px; }
+  .msg.bot::before {
+    content: ""; position: absolute; left: 0; top: 0;
+    width: 34px; height: 34px; border-radius: 50%;
+    background: url("/sioul-avatar.svg") center / cover;
+  }
+
+  /* Ohne Whisper/Piper: Mikrofon und Vorlesen ausblenden */
+  .mic, .msg-actions { display: none !important; }
+</style>
+</head>
+<body>
+
+<!-- Logo-Symbol einmal definieren, unten mehrfach verwenden -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="sioulRing" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7c5cff"/>
+      <stop offset="1" stop-color="#3b8fd4"/>
+    </linearGradient>
+    <symbol id="sioulIcon" viewBox="0 0 64 64">
+      <circle cx="32" cy="34" r="24" fill="none" stroke="url(#sioulRing)" stroke-width="6"
+              stroke-linecap="round" stroke-dasharray="118 32.8" transform="rotate(-52 32 34)"/>
+      <line x1="32" y1="25" x2="32" y2="44" stroke="currentColor" stroke-width="6" stroke-linecap="round"/>
+      <circle cx="32" cy="9" r="4" fill="#5ad1c8"/>
+    </symbol>
+    <linearGradient id="sioulTile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7a45e6"/>
+      <stop offset="1" stop-color="#2b1b78"/>
+    </linearGradient>
+    <symbol id="sioulAvatar" viewBox="0 0 64 64">
+      <rect width="64" height="64" rx="15" fill="url(#sioulTile)"/>
+      <path d="M24 17 Q13 32 24 47" fill="none" stroke="#c9b8ff" stroke-width="4.5" stroke-linecap="round"/>
+      <path d="M40 17 Q51 32 40 47" fill="none" stroke="#c9b8ff" stroke-width="4.5" stroke-linecap="round"/>
+      <circle cx="32" cy="21" r="3.6" fill="#5ad1c8"/>
+      <line x1="32" y1="29" x2="32" y2="43" stroke="#f3f0ff" stroke-width="5" stroke-linecap="round"/>
+    </symbol>
+    <linearGradient id="spiralLine" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5ad1c8" stop-opacity=".9"/>
+      <stop offset=".5" stop-color="#7c5cff" stop-opacity=".7"/>
+      <stop offset="1" stop-color="#7c5cff" stop-opacity=".15"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<!-- Zeitspirale: der Chat-Verlauf -->
+<div class="spiral" id="spiral" aria-hidden="true">
+  <div class="spiral-head"><h2 id="spiralTitle">Zeitspirale</h2><span id="spiralCount"></span></div>
+  <button class="icon-btn spiral-close" id="spiralClose" title="Schließen (Esc)" aria-label="Schließen">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+  </button>
+  <svg class="track" id="spiralSvg"></svg>
+  <div id="spiralNodes"></div>
+  <div class="zoom-ctl" onclick="event.stopPropagation()">
+    <span class="zoom-hint">Pinch zum Zoomen · zwei Finger oder Ziehen zum Verschieben</span>
+    <button id="zoomOut" title="Herauszoomen (−)" aria-label="Herauszoomen">−</button>
+    <span id="zoomLevel">100 %</span>
+    <button id="zoomIn" title="Hineinzoomen (+)" aria-label="Hineinzoomen">+</button>
+    <button id="zoomReset" title="Zurück nach außen (0)" aria-label="Zoom zurücksetzen">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- Ausklappbare Chat-Liste (unten in der Mitte) -->
+<button class="drawer-toggle" id="drawerToggle" title="Chat-Liste ausklappen" aria-label="Chat-Liste ausklappen" aria-expanded="false">
+  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 6.5 21 18H3Z"/></svg>
+</button>
+<div class="drawer" id="drawer" aria-hidden="true">
+  <div class="drawer-head">
+    <h3>Alle Chats</h3>
+    <input class="drawer-search" id="drawerSearch" type="search" placeholder="Suchen …" autocomplete="off">
+  </div>
+  <div class="drawer-list" id="drawerList"></div>
+</div>
+
+<div class="account">
+  <svg class="avatar" width="34" height="34"><use href="#sioulAvatar"/></svg>
+  <span class="account-text">
+    <span class="account-name" id="accountName"></span>
+    <span class="account-sub" id="accountSub"></span>
+  </span>
+</div>
+
+<div class="app empty" id="app">
+  <header>
+    <button class="icon-btn" id="openSpiral" title="Verlauf (Zeitspirale)" aria-label="Verlauf öffnen">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6c4-1.5 8-1 11 1.5 3 2.6 3.2 7 .4 9.4-2.7 2.3-6.8 1.7-8.4-1.3-1.4-2.6 0-5.6 2.7-6 2.3-.3 3.9 1.9 3 3.8"/></svg>
+    </button>
+    <button class="icon-btn" id="newChat" title="Neuer Chat (⇧⌘O)" aria-label="Neuer Chat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+    </button>
+    <div class="mode-switch" role="tablist" aria-label="Modus">
+      <span class="mode-pill"></span>
+      <button type="button" role="tab" data-mode="chat" aria-selected="true" title="Freier Chat mit s(i)oul">Chat</button>
+      <button type="button" role="tab" data-mode="docs" aria-selected="false" title="Fragen an das s(i)oul.RAG!-System">RAG</button>
+    </div>
+    <div class="model-picker">
+      <button class="icon-btn model-btn" id="modelBtn" type="button" title="Modell wählen">
+        <span id="modelLabel">sioul</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="model-menu" id="modelMenu" hidden></div>
+    </div>
+    <div class="brand">
+      <span class="wordmark">s<span class="p">(</span><span class="i">i</span><span class="p">)</span>oul<span class="tld">.ai</span></span>
+    </div>
+  </header>
+
+  <main id="scroller">
+    <div class="messages" id="messages"></div>
+  </main>
+
+  <div class="composer-wrap">
+    <div class="hero">
+      <svg class="logo-icon" width="72" height="72"><use href="#sioulIcon"/></svg>
+      <span class="wordmark">s<span class="p">(</span><span class="i">i</span><span class="p">)</span>oul<span class="tld">.ai</span></span>
+    </div>
+    <form class="composer" id="form">
+      <textarea id="input" rows="1" placeholder="Frag s(i)oul …" autofocus></textarea>
+      <div class="composer-row">
+        <button class="mic" id="mic" type="button" title="Spracheingabe" aria-label="Spracheingabe">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
+        </button>
+        <button class="send" id="send" type="submit" disabled aria-label="Senden">
+          <svg class="send-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+          <svg class="stop-icon" viewBox="0 0 24 24" fill="currentColor"><rect x="7" y="7" width="10" height="10" rx="1.5"/></svg>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+  // Die Seite spricht mit dem kleinen s(i)oul-Programm (server.py),
+  // das sie auch ausliefert. Deshalb reichen relative Adressen.
+
+  // =================================================================
+  // KONTO-ANZEIGE unten links (hier Namen anpassen)
+  // =================================================================
+  const USER_NAME = "Louis Leicht";
+
+  document.getElementById("accountName").textContent = USER_NAME;
+
+  // ---------- Modellauswahl ----------
+  const modelBtn = document.getElementById("modelBtn");
+  const modelMenu = document.getElementById("modelMenu");
+  const modelLabel = document.getElementById("modelLabel");
+  let models = [];
+  let currentModel = { name: "sioul", size: "" };
+
+  const shortName = m => m.name.replace(/:latest$/, "");
+  function savedModel() { try { return localStorage.getItem("sioul-model"); } catch { return null; } }
+  function saveModel(n) { try { localStorage.setItem("sioul-model", n); } catch {} }
+
+  function renderModels() {
+    modelLabel.innerHTML = "";
+    modelLabel.append(shortName(currentModel));
+    document.getElementById("accountSub").textContent = "Lokal · " + (currentModel.base || shortName(currentModel));
+
+    modelMenu.innerHTML = "";
+    for (const m of models) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "model-opt" + (m.name === currentModel.name ? " active" : "");
+      b.innerHTML = '<svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+      const n = document.createElement("span"); n.className = "name";
+      const t = document.createElement("span"); t.className = "title"; t.textContent = shortName(m);
+      n.append(t);
+      if (m.base) { const bs = document.createElement("span"); bs.className = "base"; bs.textContent = m.base; n.append(bs); }
+      const s = document.createElement("span"); s.className = "size"; s.textContent = m.size || "";
+      b.append(n, s);
+      b.addEventListener("click", () => {
+        currentModel = m; saveModel(m.name); modelMenu.hidden = true; renderModels(); input.focus();
+      });
+      modelMenu.appendChild(b);
+    }
+  }
+  async function loadModels() {
+    try { models = await (await fetch("/api/models")).json(); } catch { models = []; }
+    if (!models.length) models = [{ name: "sioul", size: "" }];
+    const saved = savedModel();
+    currentModel = models.find(m => m.name === saved)
+                || models.find(m => shortName(m) === "sioul")
+                || models[0];
+    renderModels();
+  }
+  modelBtn.addEventListener("click", (e) => { e.stopPropagation(); modelMenu.hidden = !modelMenu.hidden; });
+  document.addEventListener("click", (e) => { if (!modelMenu.contains(e.target)) modelMenu.hidden = true; });
+
+  // ---------- Markdown → HTML (Überschriften, fett, Listen, Code ...) ----------
+  function esc(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+  function inline(s) {
+    return s.split(/(`[^`\n]+`)/).map((part, i) => {
+      if (i % 2) return "<code>" + esc(part.slice(1, -1)) + "</code>";
+      return esc(part)
+        .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+        .replace(/__([^_]+)__/g, "<strong>$1</strong>")
+        .replace(/(^|[^*\w])\*([^*\s][^*\n]*?)\*(?!\w)/g, "$1<em>$2</em>")
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    }).join("");
+  }
+  function renderMarkdown(src) {
+    const lines = src.replace(/\r/g, "").split("\n");
+    let html = "", para = [], i = 0;
+    const flush = () => {
+      if (para.length) { html += "<p>" + para.map(inline).join("<br>") + "</p>"; para = []; }
+    };
+    while (i < lines.length) {
+      const line = lines[i];
+      if (/^\s*```/.test(line)) {                       // Codeblock
+        flush(); const code = []; i++;
+        while (i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i++]);
+        i++;
+        html += "<pre><code>" + esc(code.join("\n")) + "</code></pre>";
+        continue;
+      }
+      const h = line.match(/^\s*(#{1,6})\s+(.*)$/);     // Überschrift
+      if (h) { flush(); const n = Math.min(h[1].length, 4); html += `<h${n}>${inline(h[2])}</h${n}>`; i++; continue; }
+      if (/^\s*([-*_])\s*\1\s*\1[\s\-*_]*$/.test(line)) { flush(); html += "<hr>"; i++; continue; }
+      if (/^\s*[-*+]\s+/.test(line)) {                  // Aufzählung
+        flush(); html += "<ul>";
+        while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i])) html += "<li>" + inline(lines[i++].replace(/^\s*[-*+]\s+/, "")) + "</li>";
+        html += "</ul>"; continue;
+      }
+      const ol = line.match(/^\s*(\d+)[.)]\s+/);         // Nummerierte Liste
+      if (ol) {
+        flush(); html += `<ol start="${ol[1]}">`;
+        while (i < lines.length && /^\s*\d+[.)]\s+/.test(lines[i])) html += "<li>" + inline(lines[i++].replace(/^\s*\d+[.)]\s+/, "")) + "</li>";
+        html += "</ol>"; continue;
+      }
+      if (/^\s*>\s?/.test(line)) {                      // Zitat
+        flush(); const q = [];
+        while (i < lines.length && /^\s*>\s?/.test(lines[i])) q.push(inline(lines[i++].replace(/^\s*>\s?/, "")));
+        html += "<blockquote>" + q.join("<br>") + "</blockquote>"; continue;
+      }
+      if (!line.trim()) { flush(); i++; continue; }
+      para.push(line); i++;
+    }
+    flush();
+    return html;
+  }
+  function showBot(el, text) {
+    el.className = "msg bot md";
+    const m = text.match(/\s*\((Quelle[n]?:[^)]*)\)\s*$/i);      // "(Quelle: …)" am Ende
+    el.innerHTML = renderMarkdown(m ? text.slice(0, m.index) : text);
+    if (m) { const src = document.createElement("span"); src.className = "source"; src.textContent = m[1]; el.appendChild(src); }
+  }
+
+  const app = document.getElementById("app");
+  const messagesEl = document.getElementById("messages");
+  const scroller = document.getElementById("scroller");
+  const form = document.getElementById("form");
+  const input = document.getElementById("input");
+  const sendBtn = document.getElementById("send");
+
+  let busy = false;
+  let controller = null;
+  let sessionId = newSessionId();
+
+  function newSessionId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return "s-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+  }
+  function scrollDown() { scroller.scrollTop = scroller.scrollHeight; }
+  function nearBottom() { return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 80; }
+  function setEmpty(isEmpty) { app.classList.toggle("empty", isEmpty); }
+
+  // ---------- Nachrichten anzeigen ----------
+  const ICON_EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+  const ICON_UP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>';
+
+  function addUser(text) {
+    setEmpty(false);
+    const wrap = document.createElement("div");
+    wrap.className = "uwrap";
+    const el = document.createElement("div");
+    el.className = "msg user";
+    el.textContent = text;
+    const acts = document.createElement("div");
+    acts.className = "uacts";
+    const pen = document.createElement("button");
+    pen.type = "button"; pen.className = "act"; pen.title = "Frage bearbeiten"; pen.innerHTML = ICON_EDIT;
+    pen.addEventListener("click", () => startEdit(wrap, text));
+    acts.appendChild(pen);
+    wrap.append(el, acts);
+    messagesEl.appendChild(wrap);
+    markEditable();
+    scrollDown();
+  }
+  // Nur die letzte eigene Frage lässt sich bearbeiten
+  function markEditable() {
+    const all = messagesEl.querySelectorAll(".uwrap");
+    all.forEach((w, i) => w.classList.toggle("editable", i === all.length - 1));
+  }
+
+  // Letzte Frage bearbeiten und erneut senden
+  function startEdit(wrap, original) {
+    if (busy || wrap.querySelector(".editing")) return;
+    const bubble = wrap.querySelector(".msg.user");
+    const box = document.createElement("div");
+    box.className = "msg user editing";
+    const ta = document.createElement("textarea");
+    ta.value = original; ta.rows = 1;
+    const row = document.createElement("div");
+    row.className = "edit-row";
+    const hint = document.createElement("span");
+    hint.className = "edit-hint"; hint.textContent = "Esc zum Abbrechen";
+    const resend = document.createElement("button");
+    resend.type = "button"; resend.className = "send resend"; resend.title = "Erneut senden";
+    resend.setAttribute("aria-label", "Erneut senden"); resend.innerHTML = ICON_UP;
+    resend.hidden = true;
+    row.append(hint, resend);
+    box.append(ta, row);
+    bubble.replaceWith(box);
+    wrap.classList.add("is-editing");
+
+    const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 240) + "px"; };
+    const changed = () => ta.value.trim() && ta.value.trim() !== original.trim();
+    const cancel = () => { box.replaceWith(bubble); wrap.classList.remove("is-editing"); input.focus(); };
+    const submit = () => {
+      if (!changed() || busy) return;
+      const text = ta.value.trim();
+      // Diese Frage und alles danach entfernen, dann neu senden
+      let n = wrap;
+      while (n) { const next = n.nextElementSibling; n.remove(); n = next; }
+      send(text, { replaceLast: true });
+    };
+    ta.addEventListener("input", () => { grow(); resend.hidden = !changed(); });
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancel(); }
+      if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); submit(); }
+    });
+    resend.addEventListener("click", submit);
+    grow();
+    ta.focus();
+    ta.setSelectionRange(ta.value.length, ta.value.length);
+  }
+  function addBot(text) {
+    setEmpty(false);
+    const el = document.createElement("div");
+    showBot(el, text);
+    addActions(el);
+    messagesEl.appendChild(el);
+  }
+  function addTyping() {
+    const el = document.createElement("div");
+    el.className = "msg bot";
+    el.innerHTML = '<span class="typing"><span></span><span></span><span></span></span>';
+    messagesEl.appendChild(el);
+    scrollDown();
+    return el;
+  }
+  function fillNote(el, cls, text) {
+    el.className = "msg bot " + cls;
+    el.textContent = text;
+    scrollDown();
+  }
+  function addNote(el, text) {
+    const n = document.createElement("span");
+    n.className = "note";
+    n.textContent = text;
+    el.appendChild(n);
+  }
+
+  // ---------- Frage senden (Antwort kommt Wort für Wort) ----------
+  async function send(text, opts = {}) {
+    busy = true; updateButton();
+    addUser(text);
+    const botEl = addTyping();
+    controller = new AbortController();
+    let answer = "";
+    try {
+      if (mode === "docs") {
+        const r = await fetch("/api/rag/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId, message: text, model: currentModel.name }),
+          signal: controller.signal
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || "Status " + r.status);
+        answer = String(data.answer || "");
+        if (answer.trim()) { showBot(botEl, answer.trim()); addActions(botEl); scrollDown(); }
+        else fillNote(botEl, "error", "Keine Antwort erhalten.");
+        return;
+      }
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId, message: text, model: currentModel.name, replaceLast: !!opts.replaceLast }),
+        signal: controller.signal
+      });
+      if (!res.ok) {
+        let msg = "Status " + res.status;
+        try { msg = (await res.json()).error || msg; } catch {}
+        throw new Error(msg);
+      }
+      loadChatList(); // neuer Chat erscheint sofort links
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        answer += decoder.decode(value, { stream: true });
+        const stick = nearBottom();
+        showBot(botEl, answer);
+        if (stick) scrollDown();
+      }
+      answer += decoder.decode();
+      if (answer.trim()) { showBot(botEl, answer.trim()); addActions(botEl); }
+      else fillNote(botEl, "error", "Keine Antwort erhalten.");
+    } catch (err) {
+      if (err.name === "AbortError") {
+        if (answer.trim()) { showBot(botEl, answer.trim()); addNote(botEl, "Gestoppt."); addActions(botEl); }
+        else fillNote(botEl, "stopped", "Gestoppt.");
+      } else {
+        fillNote(botEl, "error", mode === "docs"
+          ? "Fehler beim RAG. Prüfe: Laufen n8n und Postgres (docker ps) und ist der Workflow „local RAG Agent“ veröffentlicht?\n(" + err.message + ")"
+          : "Fehler beim Senden. Prüfe: Läuft die Ollama-App? Zeigt „ollama list“ das Modell sioul? " +
+            "Läuft der Container (docker compose ps)?\n(" + err.message + ")");
+      }
+    } finally {
+      busy = false; controller = null; updateButton(); input.focus();
+      loadChatList();
+    }
+  }
+
+  function updateButton() {
+    sendBtn.classList.toggle("stopping", busy);
+    sendBtn.disabled = !busy && !input.value.trim();
+    sendBtn.setAttribute("aria-label", busy ? "Stoppen" : "Senden");
+    sendBtn.title = busy ? "Stoppen" : "Senden";
+  }
+
+  // ---------- Modus: Chat (s(i)oul) oder Dokumente (RAG über n8n) ----------
+  let mode = (() => { try { return localStorage.getItem("sioul-mode") === "docs" ? "docs" : "chat"; } catch { return "chat"; } })();
+  const apiBase = () => mode === "docs" ? "/api/rag" : "/api";
+
+  // ---------- Verlauf aus der Datenbank ----------
+  async function api(path, options) {
+    const res = await fetch(path, options);
+    if (!res.ok) throw new Error("Status " + res.status);
+    return res.json();
+  }
+
+  // =================================================================
+  // ZEITSPIRALE: Chats liegen auf einer Spirale. Außen (beim „+“) sind
+  // die neuesten, nach innen werden sie älter, kleiner und blasser.
+  // =================================================================
+  const spiralEl = document.getElementById("spiral");
+  const spiralSvg = document.getElementById("spiralSvg");
+  const spiralNodes = document.getElementById("spiralNodes");
+  const SVGNS = "http://www.w3.org/2000/svg";
+  let chats = [];
+  let peekEl = null;
+  let drawerOpen = false;
+  let nodeById = {};
+
+  async function loadChatList() {
+    try { chats = await api(apiBase() + "/chats"); } catch { chats = null; }
+    if (spiralEl.classList.contains("open")) renderSpiral(false);
+    if (drawerOpen) renderList();
+  }
+
+  // Markdown-Zeichen aus der Vorschau entfernen
+  function plain(md) {
+    return (md || "").replace(/```[\s\S]*?(```|$)/g, " ").replace(/`([^`]*)`/g, "$1")
+      .replace(/^\s{0,3}(#{1,6}|[-*+]|\d+[.)]|>)\s+/gm, "").replace(/\*\*|__|\*|_/g, "")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1").replace(/\s+/g, " ").trim();
+  }
+
+  // ---------- Ausklappbare Liste ----------
+  const drawerEl = document.getElementById("drawer");
+  const drawerList = document.getElementById("drawerList");
+  const drawerSearch = document.getElementById("drawerSearch");
+  const drawerToggle = document.getElementById("drawerToggle");
+  const ICON_TRASH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/></svg>';
+
+  const ICON_PEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+
+  // Eine Gruppe pro Kalendertag: Heute, Gestern, sonst das Datum
+  function groupOf(ts) {
+    if (!ts) return "Früher";                      // n8n speichert für ältere Chats keine Uhrzeit
+    const d = new Date(ts * 1000), now = new Date();
+    const day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const diff = Math.round((day(now) - day(d)) / 864e5);
+    if (diff === 0) return "Heute";
+    if (diff === 1) return "Gestern";
+    if (diff === -1) return "Morgen";
+    return d.toLocaleDateString("de-DE", {
+      weekday: "long", day: "numeric", month: "long",
+      year: d.getFullYear() === now.getFullYear() ? undefined : "numeric"
+    });
+  }
+  const timeOf = ts => ts ? new Date(ts * 1000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" }) : "";
+
+  function startRename(row, c) {
+    const titleEl = row.querySelector(".title");
+    const inp = document.createElement("input");
+    inp.className = "rename-input"; inp.value = (c.title || "").trim(); inp.maxLength = 120;
+    titleEl.replaceWith(inp);
+    inp.focus(); inp.select();
+    let done = false;
+    const finish = async (save) => {
+      if (done) return; done = true;
+      const name = inp.value.replace(/\s+/g, " ").trim();
+      if (save && name && name !== (c.title || "").trim()) {
+        try {
+          await api(apiBase() + "/chats/" + encodeURIComponent(c.id), {
+            method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: name })
+          });
+          c.title = name;
+        } catch (err) { alert("Umbenennen fehlgeschlagen (" + err.message + ")."); }
+      }
+      renderList();
+      if (spiralEl.classList.contains("open")) renderSpiral(false);
+    };
+    inp.addEventListener("click", e => e.stopPropagation());
+    inp.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Enter") finish(true);
+      if (e.key === "Escape") finish(false);
+    });
+    inp.addEventListener("blur", () => finish(true));
+  }
+
+  function renderList() {
+    drawerList.innerHTML = "";
+    if (chats === null) { drawerList.innerHTML = '<div class="drawer-empty">Verlauf nicht erreichbar.</div>'; return; }
+    const q = drawerSearch.value.trim().toLowerCase();
+    const hits = chats.filter(c => !q || ((c.title || "") + " " + (c.preview || "")).toLowerCase().includes(q));
+    if (!hits.length) {
+      drawerList.innerHTML = '<div class="drawer-empty">' + (q ? "Nichts gefunden." : "Noch keine Chats.") + "</div>";
+      return;
+    }
+    let group = null;
+    for (const c of hits) {
+      const g = groupOf(c.updated);
+      if (g !== group) {
+        group = g;
+        const gh = document.createElement("div"); gh.className = "drawer-group"; gh.textContent = g;
+        drawerList.appendChild(gh);
+      }
+      const row = document.createElement("div");
+      row.className = "row" + (c.id === sessionId ? " active" : "");
+      row.tabIndex = 0; row.setAttribute("role", "button");
+      row.innerHTML = '<span class="dot"></span><span class="title"></span>' +
+        '<span class="side"><span class="time"></span><span class="acts">' +
+        '<button class="ren" title="Umbenennen" aria-label="Umbenennen">' + ICON_PEN + '</button>' +
+        '<button class="del" title="Löschen" aria-label="Löschen">' + ICON_TRASH + '</button></span></span>';
+      row.querySelector(".title").textContent = (c.title || "Ohne Titel").trim();
+      row.querySelector(".title").title = (c.title || "Ohne Titel").trim();
+      row.querySelector(".time").textContent = timeOf(c.updated);
+      row.querySelector(".ren").addEventListener("click", (e) => { e.stopPropagation(); startRename(row, c); });
+      row.querySelector(".del").addEventListener("click", (e) => { e.stopPropagation(); deleteChat(c.id, (c.title || "Ohne Titel").trim()); });
+
+      const open = () => { openChat(c.id); setDrawer(false); };
+      row.addEventListener("click", open);
+      row.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === row) open(); });
+      row.addEventListener("mouseenter", () => nodeById[c.id]?.hl(true));
+      row.addEventListener("mouseleave", () => nodeById[c.id]?.hl(false));
+      drawerList.appendChild(row);
+    }
+  }
+
+  function setDrawer(open) {
+    drawerOpen = open;
+    document.body.classList.toggle("drawer-open", open);
+    drawerEl.setAttribute("aria-hidden", String(!open));
+    drawerToggle.setAttribute("aria-expanded", String(open));
+    drawerToggle.title = open ? "Chat-Liste einklappen" : "Chat-Liste ausklappen";
+    if (open) {
+      document.body.style.removeProperty("--dh");   // per Klick immer volle Höhe (2/3)
+      renderList(); loadChatList(); setTimeout(() => drawerSearch.focus({ preventScroll: true }), 350);
+    } else {
+      drawerSearch.value = "";
+      setTimeout(() => { if (!drawerOpen) document.body.style.removeProperty("--dh"); }, 420);
+      if (!spiralEl.classList.contains("open")) input.focus();
+    }
+  }
+  // Kurzer Klick: auf/zu. Gedrückt halten und ziehen: Höhe frei wählen (bis 2/3 des Bildschirms)
+  let dragDrawer = null, skipToggleClick = false;
+  // Beim Ziehen: bis knapp unter den Schalter „Chat | RAG“ (Dreieck bleibt darunter sichtbar)
+  const maxDrawer = () => {
+    const sw = document.querySelector(".mode-switch").getBoundingClientRect();
+    return Math.max(window.innerHeight * 0.66, window.innerHeight - sw.bottom - 48);
+  };
+  drawerToggle.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    drawerToggle.setPointerCapture(e.pointerId);
+    dragDrawer = { y: e.clientY, h: drawerOpen ? drawerEl.getBoundingClientRect().height : 0, moved: false, cur: 0 };
+  });
+  drawerToggle.addEventListener("pointermove", (e) => {
+    if (!dragDrawer) return;
+    const dy = dragDrawer.y - e.clientY;
+    if (!dragDrawer.moved) {
+      if (Math.abs(dy) < 5) return;
+      dragDrawer.moved = true;
+      document.body.classList.add("drawer-dragging");
+      if (!drawerOpen) {
+        document.body.style.setProperty("--dh", "0px");
+        drawerOpen = true;
+        document.body.classList.add("drawer-open");
+        drawerEl.setAttribute("aria-hidden", "false");
+        drawerToggle.setAttribute("aria-expanded", "true");
+        renderList(); loadChatList();
+      }
+    }
+    dragDrawer.cur = Math.max(0, Math.min(maxDrawer(), dragDrawer.h + dy));
+    document.body.style.setProperty("--dh", dragDrawer.cur + "px");
+  });
+  const endDrawerDrag = () => {
+    if (!dragDrawer) return;
+    const d = dragDrawer; dragDrawer = null;
+    if (!d.moved) return;                         // war nur ein Klick
+    skipToggleClick = true;
+    document.body.classList.remove("drawer-dragging");
+    if (d.cur < 60) setDrawer(false);             // fast zu: ganz zuklappen
+  };
+  drawerToggle.addEventListener("pointerup", endDrawerDrag);
+  drawerToggle.addEventListener("pointercancel", endDrawerDrag);
+  drawerToggle.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (skipToggleClick) { skipToggleClick = false; return; }
+    setDrawer(!drawerOpen);
+  });
+  drawerEl.addEventListener("click", (e) => e.stopPropagation());
+  // Klick daneben klappt die Liste wieder ein
+  document.addEventListener("click", (e) => {
+    if (drawerOpen && !drawerEl.contains(e.target) && !drawerToggle.contains(e.target)) setDrawer(false);
+  });
+  drawerSearch.addEventListener("input", renderList);
+
+  function when(ts) {
+    if (!ts) return "";
+    const d = new Date(ts * 1000), now = new Date();
+    const day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const diff = Math.round((day(now) - day(d)) / 864e5);
+    const time = d.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+    if (diff === 0) return "heute, " + time;
+    if (diff === 1) return "gestern, " + time;
+    if (diff < 7) return d.toLocaleDateString("de-DE", { weekday: "long" }) + ", " + time;
+    return d.toLocaleDateString("de-DE", { day: "numeric", month: "short", year: d.getFullYear() === now.getFullYear() ? undefined : "numeric" });
+  }
+
+  // =================================================================
+  // ZOOMBARE ZEITSPIRALE (logarithmische Spirale, wie ein Schneckenhaus)
+  // Jede Windung nach innen ist um den Faktor RING_RATIO kleiner – inklusive
+  // Schrift und Punkte. Hineinzoomen macht ältere Chats groß; weil die Form
+  // selbstähnlich ist, wirkt das Zoomen wie ein Drehen der Spirale.
+  // =================================================================
+  const RING_RATIO = 0.6;                       // Größe der nächsten Windung
+  const LOG_B = Math.log(RING_RATIO) / (2 * Math.PI);
+  const A0 = -Math.PI * 0.62;                   // Start oben links
+  const BASE_FONT = 12.5, BASE_NODE = 7.5, ITEM_GAP = 34;
+
+  // Textbreiten messen und Titel bei Bedarf mit „…“ kürzen
+  const measureCtx = document.createElement("canvas").getContext("2d");
+  const LABEL_FONT = '500 12.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+  // Titel komplett ausschreiben; nur ab dem 7. Wort wird mit „…“ gekürzt
+  const MAX_WORDS = 6;
+  function fitText(text) {
+    measureCtx.font = LABEL_FONT;
+    const words = text.split(" ").filter(Boolean);
+    const s = words.length > MAX_WORDS ? words.slice(0, MAX_WORDS).join(" ") + " …" : text;
+    return [s, measureCtx.measureText(s).width];
+  }
+
+  // Spirale als Punktliste mit Bogenlänge; wird bei Bedarf nach innen verlängert
+  function makeSpiral(cx, cy, R) {
+    const pts = [];             // [x, y, s, sigma, theta]
+    let theta = 0, s = 0;
+    const at = th => {
+      const r = R * Math.exp(LOG_B * th), a = A0 + th;
+      return [cx + r * Math.cos(a), cy + r * Math.sin(a), r / R];
+    };
+    let [x0, y0, g0] = at(0);
+    pts.push([x0, y0, 0, g0, 0]);
+    function extendTo(target) {
+      while (s < target && pts[pts.length - 1][3] > 0.0008) {
+        theta += 0.03;
+        const [x, y, g] = at(theta);
+        const last = pts[pts.length - 1];
+        s += Math.hypot(x - last[0], y - last[1]);
+        pts.push([x, y, s, g, theta]);
+      }
+      return s >= target;
+    }
+    function pointAt(target) {
+      extendTo(target);
+      let lo = 0, hi = pts.length - 1;
+      if (target >= pts[hi][2]) return pts[hi];
+      while (hi - lo > 1) { const m = (lo + hi) >> 1; if (pts[m][2] < target) lo = m; else hi = m; }
+      const a = pts[lo], b = pts[hi], f = (target - a[2]) / Math.max(1e-9, b[2] - a[2]);
+      return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, target, a[3] + (b[3] - a[3]) * f];
+    }
+    return { pts, extendTo, pointAt, total: () => s };
+  }
+
+  // ---------- Zoom & Verschieben ----------
+  // Bildschirmposition = Weltposition * zoom + (panX, panY)
+  const ZOOM_MAX = 20000;                       // praktisch unbegrenzt
+  let zoom = 1, panX = 0, panY = 0, viewRaf = 0;
+  let world = null, items = [], spiralCenter = { x: 0, y: 0 };
+  const zoomLabel = () => document.getElementById("zoomLevel");
+
+  function fmtZoom(z) {
+    const p = z * 100;
+    return (p >= 100000 ? Math.round(p / 1000) + "k" : Math.round(p).toLocaleString("de-DE")) + " %";
+  }
+  function applyZoom() {
+    if (!world) return;
+    world.setAttribute("transform", `translate(${panX} ${panY}) scale(${zoom})`);
+    // Sichtbarkeit nach Größe auf dem Bildschirm: winzige und riesige ausblenden
+    for (const it of items) {
+      const eff = it.sigma * zoom;
+      let op = eff < 0.42 ? (eff - 0.16) / 0.26 : eff > 3.2 ? 1 - (eff - 3.2) / 1.6 : 1;
+      op = Math.max(0, Math.min(1, op));
+      it.g.style.opacity = op;
+      it.g.style.pointerEvents = op > 0.15 ? "auto" : "none";
+    }
+    const zl = zoomLabel();
+    if (zl) zl.textContent = fmtZoom(zoom);
+    document.getElementById("zoomReset").disabled = zoom < 1.02 && Math.abs(panX) < 2 && Math.abs(panY) < 2;
+  }
+  // Um einen Bildschirmpunkt herum zoomen (der Punkt bleibt unter dem Finger/Cursor)
+  function zoomAt(factor, px, py) {
+    const nz = Math.max(0.6, Math.min(ZOOM_MAX, zoom * factor));
+    const f = nz / zoom;
+    panX = px - (px - panX) * f;
+    panY = py - (py - panY) * f;
+    zoom = nz;
+    clampPan();
+    applyZoom();
+  }
+  function panBy(dx, dy) { panX += dx; panY += dy; clampPan(); applyZoom(); }
+  // Die Spirale darf nicht ganz aus dem Bild rutschen
+  function clampPan() {
+    const w = window.innerWidth, h = window.innerHeight;
+    const { x, y } = spiralCenter, r = Math.max(w, h) * 0.5 * zoom;
+    const sx = x * zoom + panX, sy = y * zoom + panY;
+    if (sx < -r + 80) panX += -r + 80 - sx;
+    if (sx > w + r - 80) panX -= sx - (w + r - 80);
+    if (sy < -r + 80) panY += -r + 80 - sy;
+    if (sy > h + r - 80) panY -= sy - (h + r - 80);
+  }
+  // Sanft zu einer Ansicht gleiten (für Knöpfe und Tastatur)
+  function animateView(tz, tx, ty) {
+    cancelAnimationFrame(viewRaf);
+    closePeek();
+    const step = () => {
+      const dz = Math.log(tz) - Math.log(zoom);
+      if (Math.abs(dz) < 0.002 && Math.abs(tx - panX) < 0.5 && Math.abs(ty - panY) < 0.5) {
+        zoom = tz; panX = tx; panY = ty; applyZoom(); return;
+      }
+      zoom = Math.exp(Math.log(zoom) + dz * 0.22);
+      panX += (tx - panX) * 0.22; panY += (ty - panY) * 0.22;
+      applyZoom();
+      viewRaf = requestAnimationFrame(step);
+    };
+    viewRaf = requestAnimationFrame(step);
+  }
+  function zoomStep(factor) {
+    // Um die Bildschirmmitte zoomen
+    const cx = window.innerWidth / 2, cy = window.innerHeight / 2;
+    const nz = Math.max(0.6, Math.min(ZOOM_MAX, zoom * factor)), f = nz / zoom;
+    animateView(nz, cx - (cx - panX) * f, cy - (cy - panY) * f);
+  }
+  function resetView(animate = true) {
+    if (animate) animateView(1, 0, 0);
+    else { cancelAnimationFrame(viewRaf); zoom = 1; panX = 0; panY = 0; applyZoom(); }
+  }
+
+  // Trackpad: Pinch = zoomen, zwei Finger = verschieben. Maus: Strg/⌘ + Rad = zoomen, Rad = verschieben
+  spiralEl.addEventListener("wheel", (e) => {
+    if (!spiralEl.classList.contains("open")) return;
+    e.preventDefault();
+    cancelAnimationFrame(viewRaf);
+    closePeek();
+    const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
+    if (e.ctrlKey || e.metaKey) {
+      const d = Math.max(-40, Math.min(40, e.deltaY * unit));   // Mausrad-Sprünge abfedern
+      zoomAt(Math.exp(-d * 0.01), e.clientX, e.clientY);
+    } else {
+      panBy(-e.deltaX * unit, -e.deltaY * unit);
+    }
+  }, { passive: false });
+
+  // Ziehen mit Maus oder einem Finger = verschieben; zwei Finger = Pinch-Zoom
+  const pointers = new Map();
+  let drag = null, pinch = null, suppressClick = false;
+  spiralEl.addEventListener("pointerdown", (e) => {
+    if (!spiralEl.classList.contains("open") || e.target.closest(".zoom-ctl, .spiral-close, .peek")) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 1) drag = { x: e.clientX, y: e.clientY, moved: false };
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinch = { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2 };
+      drag = null;
+    }
+  });
+  spiralEl.addEventListener("pointermove", (e) => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      panBy(mx - pinch.mx, my - pinch.my);
+      zoomAt(d / pinch.d, mx, my);
+      pinch = { d, mx, my };
+      suppressClick = true;
+    } else if (drag) {
+      const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (!drag.moved && Math.hypot(dx, dy) < 5) return;
+      if (!drag.moved) { drag.moved = true; spiralEl.classList.add("panning"); closePeek(); cancelAnimationFrame(viewRaf); }
+      panBy(dx, dy);
+      drag.x = e.clientX; drag.y = e.clientY;
+      suppressClick = true;
+    }
+  });
+  const endPointer = (e) => {
+    pointers.delete(e.pointerId);
+    if (pointers.size < 2) pinch = null;
+    if (pointers.size === 0) { drag = null; spiralEl.classList.remove("panning"); setTimeout(() => { suppressClick = false; }, 0); }
+  };
+  spiralEl.addEventListener("pointerup", endPointer);
+  spiralEl.addEventListener("pointercancel", endPointer);
+  // Nach dem Ziehen keinen Klick auslösen
+  spiralEl.addEventListener("click", (e) => { if (suppressClick) { e.stopPropagation(); e.preventDefault(); } }, true);
+
+  document.getElementById("zoomIn").addEventListener("click", (e) => { e.stopPropagation(); zoomStep(1 / RING_RATIO); });
+  document.getElementById("zoomOut").addEventListener("click", (e) => { e.stopPropagation(); zoomStep(RING_RATIO); });
+  document.getElementById("zoomReset").addEventListener("click", (e) => { e.stopPropagation(); resetView(); });
+  document.addEventListener("keydown", (e) => {
+    if (!spiralEl.classList.contains("open") || e.target.tagName === "INPUT") return;
+    if (e.key === "+" || e.key === "=") zoomStep(1 / RING_RATIO);
+    if (e.key === "-") zoomStep(RING_RATIO);
+    if (e.key === "0") resetView();
+    const step = 80;
+    if (e.key === "ArrowLeft") panBy(step, 0);
+    if (e.key === "ArrowRight") panBy(-step, 0);
+    if (e.key === "ArrowUp") panBy(0, step);
+    if (e.key === "ArrowDown") panBy(0, -step);
+  });
+
+  function renderSpiral(animate = true) {
+    closePeek();
+    const w = window.innerWidth, h = window.innerHeight;
+    const cx = w / 2, cy = h / 2 + 12;
+    const R = Math.max(130, Math.min(w * 0.44, h * 0.40));
+    spiralCenter = { x: cx, y: cy };
+    const list = chats || [];
+    const titleOf = c => (c.title || "Ohne Titel").replace(/\s+/g, " ").trim();
+    const sp = makeSpiral(cx, cy, R);
+    const [sx, sy] = sp.pts[0];
+    const tailX = Math.max(40, sx - R * 0.55);
+
+    spiralSvg.innerHTML = "";
+    spiralNodes.innerHTML = "";
+    items = [];
+    nodeById = {};
+    const defs = document.createElementNS(SVGNS, "defs");
+    defs.innerHTML =
+      '<radialGradient id="nodeG" cx="35%" cy="35%"><stop offset="0" stop-color="#d9ccff"/><stop offset=".6" stop-color="#7c5cff"/><stop offset="1" stop-color="#3d2a8a"/></radialGradient>' +
+      '<radialGradient id="nodeA" cx="35%" cy="35%"><stop offset="0" stop-color="#d6fff9"/><stop offset=".6" stop-color="#5ad1c8"/><stop offset="1" stop-color="#1f6f69"/></radialGradient>';
+    spiralSvg.appendChild(defs);
+    world = document.createElementNS(SVGNS, "g");
+    world.setAttribute("class", "world");
+    spiralSvg.appendChild(world);
+
+    const count = document.getElementById("spiralCount");
+    count.textContent = chats === null ? "" : (list.length === 1 ? "1 Chat" : list.length + " Chats");
+
+    // Chats entlang der Spirale platzieren: je weiter innen, desto kleiner
+    let s = 24;
+    const outward = (x, y, d) => {
+      const vx = x - cx, vy = y - cy, l = Math.hypot(vx, vy) || 1;
+      return [x + vx / l * d, y + vy / l * d];
+    };
+    const placed = [];
+    for (const chat of list) {
+      const [text, tw] = fitText(titleOf(chat));
+      const p = sp.pointAt(s);
+      const g = p[3];
+      if (g < 0.0015) break;                    // so tief, dass es nicht mehr sinnvoll ist
+      placed.push({ chat, text, tw, s, g, x: p[0], y: p[1] });
+      s += (tw + ITEM_GAP) * g;
+    }
+    const lastSigma = placed.length ? placed[placed.length - 1].g : 1;
+    // Noch gut zwei Windungen weiter nach innen, die weich verblassen: die Spirale „hört nicht auf“
+    const rFull = R * lastSigma * 0.95;
+    const rEnd = rFull * Math.pow(RING_RATIO, 2.5);
+    sp.extendTo(Infinity);
+    while (sp.pts.length > 2 && R * sp.pts[sp.pts.length - 1][3] < rEnd) sp.pts.pop();
+
+    const fadeGrad = document.createElementNS(SVGNS, "radialGradient");
+    fadeGrad.id = "innerFade";
+    fadeGrad.setAttribute("gradientUnits", "userSpaceOnUse");
+    fadeGrad.setAttribute("cx", cx); fadeGrad.setAttribute("cy", cy); fadeGrad.setAttribute("r", rFull);
+    const f0 = (rEnd / rFull).toFixed(4);
+    fadeGrad.innerHTML = `<stop offset="${f0}" stop-color="#fff" stop-opacity="0"/>` +
+      `<stop offset="${(f0 * 0.4 + 0.6).toFixed(4)}" stop-color="#fff" stop-opacity=".45"/>` +
+      `<stop offset="1" stop-color="#fff" stop-opacity="1"/>`;
+    const mask = document.createElementNS(SVGNS, "mask");
+    mask.id = "innerMask";
+    mask.setAttribute("maskUnits", "userSpaceOnUse");
+    mask.setAttribute("x", -w * 50); mask.setAttribute("y", -h * 50);
+    mask.setAttribute("width", w * 100); mask.setAttribute("height", h * 100);
+    mask.innerHTML = `<rect x="${-w * 50}" y="${-h * 50}" width="${w * 100}" height="${h * 100}" fill="url(#innerFade)"/>`;
+    const blur = document.createElementNS(SVGNS, "filter");
+    blur.id = "innerGlow";
+    blur.setAttribute("x", "-50%"); blur.setAttribute("y", "-50%");
+    blur.setAttribute("width", "200%"); blur.setAttribute("height", "200%");
+    blur.innerHTML = '<feGaussianBlur stdDeviation="' + (rEnd * 0.6).toFixed(2) + '"/>';
+    defs.append(fadeGrad, mask, blur);
+
+    // Ein weicher Lichtschleier dort, wo die Spirale ins Unendliche läuft
+    const glow = document.createElementNS(SVGNS, "circle");
+    glow.setAttribute("cx", cx); glow.setAttribute("cy", cy); glow.setAttribute("r", rEnd * 1.6);
+    glow.setAttribute("fill", "rgba(124,92,255,.22)");
+    glow.setAttribute("filter", "url(#innerGlow)");
+    world.appendChild(glow);
+
+    // Linie: gerader Einlauf (Faden) + Spirale
+    const path = document.createElementNS(SVGNS, "path");
+    path.setAttribute("class", "path");
+    path.setAttribute("mask", "url(#innerMask)");
+    path.setAttribute("vector-effect", "non-scaling-stroke");
+    path.setAttribute("d", `M${tailX},${sy} L${sx},${sy} ` + sp.pts.map(q => "L" + q[0].toFixed(2) + "," + q[1].toFixed(2)).join(" "));
+    world.appendChild(path);
+    const len = path.getTotalLength();
+    path.style.setProperty("--len", len);
+    // Nach dem Einzeichnen die Strichelung entfernen, damit die Linie beim Zoomen durchgehend bleibt
+    if (!animate) { path.style.transition = "none"; path.style.strokeDasharray = "none"; }
+    else setTimeout(() => { path.style.strokeDasharray = "none"; }, 1300);
+
+    // „Neuer Chat“ am Anfang des Fadens
+    const start = document.createElementNS(SVGNS, "g");
+    start.setAttribute("class", "start");
+    start.innerHTML = `<circle cx="${tailX}" cy="${sy}" r="22"/><path d="M${tailX - 7},${sy} h14 M${tailX},${sy - 7} v14"/>` +
+      `<text x="${tailX}" y="${sy + 40}" text-anchor="middle">Neuer Chat</text>`;
+    start.addEventListener("click", (e) => { e.stopPropagation(); if (!busy) startNewChat(); closeSpiral(); });
+    world.appendChild(start);
+
+    if (chats === null || !list.length) {
+      spiralNodes.insertAdjacentHTML("beforeend", '<div class="spiral-empty">' +
+        (chats === null ? "Verlauf nicht erreichbar. Läuft der Container?" : "Noch keine Chats. Fang beim „+“ an.") + "</div>");
+      resetView(false);
+      return;
+    }
+
+    placed.forEach((it, i) => {
+      const { chat, text, tw, g } = it;
+      const grp = document.createElementNS(SVGNS, "g");
+      grp.setAttribute("class", "item" + (chat.id === sessionId ? " active" : ""));
+
+      // Textpfad hinter dem Punkt, leicht nach außen versetzt, nie kopfüber
+      const seg = [];
+      const from = it.s + 13 * g, to = from + tw * g + 2 * g, stepLen = Math.max(0.05, 3 * g);
+      for (let a = from; a <= to; a += stepLen) { const q = sp.pointAt(a); seg.push([q[0], q[1]]); }
+      if (seg.length < 2) { const q = sp.pointAt(to); seg.push([q[0], q[1]]); }
+      const upright = seg[seg.length - 1][0] >= seg[0][0];
+      const base = (upright ? 7 : 16) * g;
+      const lp = (upright ? seg : seg.slice().reverse()).map(([x, y]) => outward(x, y, base));
+      const lpath = document.createElementNS(SVGNS, "path");
+      lpath.id = "lp" + i;
+      lpath.setAttribute("d", "M" + lp.map(q => q[0].toFixed(3) + "," + q[1].toFixed(3)).join(" L"));
+      defs.appendChild(lpath);
+
+      const t = document.createElementNS(SVGNS, "text");
+      t.setAttribute("class", "ctext");
+      t.style.fontSize = (BASE_FONT * g) + "px";
+      const tp = document.createElementNS(SVGNS, "textPath");
+      tp.setAttribute("href", "#lp" + i);
+      tp.textContent = text;
+      const tt = document.createElementNS(SVGNS, "title"); tt.textContent = titleOf(chat) + " · " + when(chat.updated);
+      t.append(tt, tp);
+
+      const dot = document.createElementNS(SVGNS, "circle");
+      dot.setAttribute("class", "dot");
+      dot.setAttribute("cx", it.x); dot.setAttribute("cy", it.y);
+      dot.setAttribute("r", BASE_NODE * g);
+      dot.setAttribute("fill", chat.id === sessionId ? "url(#nodeA)" : "url(#nodeG)");
+      const dt = document.createElementNS(SVGNS, "title"); dt.textContent = tt.textContent;
+      dot.appendChild(dt);
+
+      grp.append(t, dot);
+      world.appendChild(grp);
+      items.push({ g: grp, sigma: g });
+
+      const hl = on => grp.classList.toggle("hl", on);
+      nodeById[chat.id] = { hl };
+      grp.addEventListener("mouseenter", () => hl(true));
+      grp.addEventListener("mouseleave", () => hl(false));
+      grp.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const r = dot.getBoundingClientRect();
+        showPeek(chat, { x: r.left + r.width / 2, y: r.top + r.height / 2 }, cx);
+      });
+      grp.addEventListener("dblclick", () => { openChat(chat.id); closeSpiral(); });
+    });
+
+    if (placed.length < list.length) {
+      spiralNodes.insertAdjacentHTML("beforeend",
+        `<div class="spiral-empty" style="transform:translate(-50%, calc(50vh - 70px))">+ ${list.length - placed.length} ältere Chats</div>`);
+    }
+    if (animate) resetView(false); else { clampPan(); applyZoom(); }
+  }
+
+  function showPeek(chat, p, cx) {
+    closePeek();
+    peekEl = document.createElement("div");
+    peekEl.className = "peek";
+    const right = p.x < cx;
+    peekEl.style.left = (right ? p.x + 22 : p.x - 282) + "px";
+    peekEl.style.top = Math.max(16, Math.min(window.innerHeight - 140, p.y - 40)) + "px";
+    peekEl.innerHTML = '<div class="t"></div><div class="d"></div><div class="p"></div><div class="btns"><button class="primary">Öffnen</button><button class="danger">Löschen</button></div>';
+    peekEl.querySelector(".t").textContent = (chat.title || "Ohne Titel").trim();
+    peekEl.querySelector(".d").textContent = when(chat.updated);
+    const pv = plain(chat.preview);
+    if (pv) peekEl.querySelector(".p").textContent = pv; else peekEl.querySelector(".p").remove();
+    peekEl.querySelector(".primary").addEventListener("click", () => { openChat(chat.id); closeSpiral(); });
+    peekEl.querySelector(".danger").addEventListener("click", () => deleteChat(chat.id, (chat.title || "Ohne Titel").trim()));
+    peekEl.addEventListener("click", e => e.stopPropagation());
+    spiralNodes.appendChild(peekEl);
+    peekEl.querySelector(".primary").focus();
+  }
+  function closePeek() { if (peekEl) { peekEl.remove(); peekEl = null; } }
+
+  async function openSpiral() {
+    if (drawerOpen) setDrawer(false);
+    await loadChatList();
+    spiralEl.classList.remove("open");
+    renderSpiral(true);
+    spiralEl.setAttribute("aria-hidden", "false");
+    requestAnimationFrame(() => requestAnimationFrame(() => spiralEl.classList.add("open")));
+  }
+  function closeSpiral() {
+    closePeek();
+    spiralEl.classList.remove("open");
+    spiralEl.setAttribute("aria-hidden", "true");
+    input.focus();
+  }
+  // Die Spirale schließt nur über Esc oder das Kreuz; ein Klick ins Leere schließt nur die Karte
+  spiralEl.addEventListener("click", () => { if (peekEl) closePeek(); });
+  document.getElementById("spiralClose").addEventListener("click", (e) => { e.stopPropagation(); closeSpiral(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    if (spiralEl.classList.contains("open")) { peekEl ? closePeek() : closeSpiral(); }
+    else if (drawerOpen) setDrawer(false);
+  });
+  let resizeT;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeT);
+    resizeT = setTimeout(() => { if (spiralEl.classList.contains("open")) renderSpiral(false); }, 120);
+  });
+
+  async function openChat(id) {
+    if (busy) return;
+    try {
+      const rows = await api(apiBase() + "/chats/" + encodeURIComponent(id));
+      sessionId = id;
+      messagesEl.innerHTML = "";
+      for (const row of rows) {
+        if (row.role === "user") addUser(row.content || "");
+        else if (row.role === "assistant") addBot(row.content || "");
+      }
+      setEmpty(!rows.length);
+      scrollDown();
+      loadChatList();
+      input.focus();
+    } catch (err) {
+      alert("Chat konnte nicht geladen werden (" + err.message + ").");
+    }
+  }
+
+  async function deleteChat(id, title) {
+    if (busy) return;
+    if (!confirm("Chat „" + title + "“ endgültig löschen?")) return;
+    try {
+      await api(apiBase() + "/chats/" + encodeURIComponent(id), { method: "DELETE" });
+      if (id === sessionId) startNewChat();
+      await loadChatList();
+    } catch (err) {
+      alert("Chat konnte nicht gelöscht werden (" + err.message + ").");
+    }
+  }
+
+  function startNewChat() {
+    sessionId = newSessionId();
+    messagesEl.innerHTML = "";
+    setEmpty(true);
+    loadChatList();
+    input.focus();
+  }
+
+  // ---------- Eingabe ----------
+  // ---------- Vorlesen (Piper) ----------
+  const ICON_SPEAKER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5 6 9H2v6h4l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a9 9 0 0 1 0 14"/></svg>';
+  const ICON_STOP = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+  let audio = null, speakingBtn = null;
+
+  function speechText(el) {
+    const c = el.cloneNode(true);
+    c.querySelectorAll("pre, .note, .msg-actions").forEach(n => n.remove());
+    const blocks = [...c.querySelectorAll("p, li, h1, h2, h3, h4, blockquote")]
+      .map(n => n.textContent.trim()).filter(Boolean);
+    return (blocks.length ? blocks.join("\n") : c.textContent).trim();
+  }
+  function stopSpeaking() {
+    if (audio) { audio.pause(); audio = null; }
+    if (speakingBtn) {
+      speakingBtn.classList.remove("on", "loading");
+      speakingBtn.innerHTML = ICON_SPEAKER; speakingBtn.title = "Vorlesen";
+      speakingBtn = null;
+    }
+  }
+  async function speak(el, btn) {
+    if (speakingBtn === btn) { stopSpeaking(); return; }
+    stopSpeaking();
+    speakingBtn = btn; btn.classList.add("loading");
+    try {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: speechText(el) })
+      });
+      if (!res.ok) {
+        let m = "Status " + res.status;
+        try { m = (await res.json()).error || m; } catch {}
+        throw new Error(m);
+      }
+      const url = URL.createObjectURL(await res.blob());
+      if (speakingBtn !== btn) return; // inzwischen gestoppt
+      audio = new Audio(url);
+      audio.onended = () => { URL.revokeObjectURL(url); if (speakingBtn === btn) stopSpeaking(); };
+      btn.classList.remove("loading"); btn.classList.add("on");
+      btn.innerHTML = ICON_STOP; btn.title = "Stoppen";
+      await audio.play();
+    } catch (err) {
+      stopSpeaking();
+      alert("Vorlesen nicht möglich: " + err.message);
+    }
+  }
+  function addActions(el) {
+    if (el.querySelector(".msg-actions")) return;
+    const bar = document.createElement("div");
+    bar.className = "msg-actions";
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "act"; b.title = "Vorlesen"; b.innerHTML = ICON_SPEAKER;
+    b.addEventListener("click", () => speak(el, b));
+    bar.appendChild(b);
+    el.appendChild(bar);
+  }
+
+  // ---------- Spracheingabe (Whisper) ----------
+  const micBtn = document.getElementById("mic");
+  let recorder = null, micStream = null, chunks = [];
+
+  async function toggleMic() {
+    if (recorder && recorder.state === "recording") { recorder.stop(); return; }
+    if (micBtn.classList.contains("working")) return;
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+      alert("Dieser Browser unterstützt keine Aufnahme. Öffne s(i)oul über http://localhost:3000.");
+      return;
+    }
+    try {
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (err) {
+      alert("Kein Zugriff aufs Mikrofon. Bitte im Browser erlauben.\n(" + err.message + ")");
+      return;
+    }
+    stopSpeaking();
+    chunks = [];
+    recorder = new MediaRecorder(micStream);
+    recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+    recorder.onstop = async () => {
+      micStream.getTracks().forEach(t => t.stop());
+      const type = recorder.mimeType || "audio/webm";
+      recorder = null;
+      micBtn.classList.remove("recording"); micBtn.classList.add("working");
+      micBtn.title = "Wird erkannt …";
+      try {
+        const res = await fetch("/api/stt", { method: "POST", headers: { "Content-Type": type }, body: new Blob(chunks, { type }) });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Status " + res.status);
+        if (data.text) {
+          input.value = (input.value.trim() ? input.value.trim() + " " : "") + data.text;
+          autoGrow(); updateButton();
+        }
+      } catch (err) {
+        alert("Spracherkennung fehlgeschlagen: " + err.message);
+      } finally {
+        micBtn.classList.remove("working"); micBtn.title = "Spracheingabe";
+        input.focus();
+      }
+    };
+    recorder.start();
+    micBtn.classList.add("recording"); micBtn.title = "Aufnahme beenden";
+  }
+  micBtn.addEventListener("click", toggleMic);
+
+  function autoGrow() {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 200) + "px";
+  }
+  input.addEventListener("input", () => { autoGrow(); updateButton(); });
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && !e.shiftKey && !e.isComposing) {
+      e.preventDefault();
+      if (!busy) form.requestSubmit();
+    }
+  });
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (busy) { controller?.abort(); return; }   // Button dient als Stopp
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = ""; autoGrow(); updateButton();
+    send(text);
+  });
+  document.getElementById("newChat").addEventListener("click", () => { if (!busy) startNewChat(); });
+
+  // Tastenkürzel für einen neuen Chat: ⌘N (wo der Browser es erlaubt) und ⇧⌘O
+  document.addEventListener("keydown", (e) => {
+    const mod = e.metaKey || e.ctrlKey;
+    const k = e.key.toLowerCase();
+    if (mod && ((k === "n" && !e.shiftKey) || (k === "o" && e.shiftKey))) {
+      e.preventDefault();
+      if (busy) return;
+      if (spiralEl.classList.contains("open")) closeSpiral();
+      if (drawerOpen) setDrawer(false);
+      startNewChat();
+    }
+  });
+  document.getElementById("openSpiral").addEventListener("click", openSpiral);
+
+  const modeButtons = document.querySelectorAll(".mode-switch button");
+  function applyMode() {
+    document.body.classList.toggle("mode-docs", mode === "docs");
+    modeButtons.forEach(b => b.setAttribute("aria-selected", String(b.dataset.mode === mode)));
+    input.placeholder = mode === "docs" ? "Frag s(i)oul.RAG! …" : "Frag s(i)oul …";
+    document.getElementById("spiralTitle").textContent = mode === "docs" ? "Zeitspirale · RAG" : "Zeitspirale";
+    document.getElementById("accountSub").textContent = "Lokal · " + (currentModel.base || shortName(currentModel));
+  }
+  function setMode(m) {
+    if (m === mode || busy) return;
+    mode = m;
+    try { localStorage.setItem("sioul-mode", m); } catch {}
+    applyMode();
+    startNewChat();                         // jede Seite hat ihre eigene Historie
+  }
+  modeButtons.forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+
+  loadModels().then(applyMode);
+  loadChatList();
+</script>
+</body>
+</html>
