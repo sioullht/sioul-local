@@ -2,19 +2,19 @@ import os
 import sqlite3
 import time
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
-from ownRAG import build_database, retrieve, llm, LANGUAGE_MODEL
+import voice  # Whisper + Piper (Sprache)
+from ownRAG import BASE_DIR, LANGUAGE_MODEL, MODELS, NO_INFO, build_database, llm, retrieve, system_prompt
 
-DB_PATH = os.getenv('DB_PATH', 'chats.db')
-NO_INFO = 'Dazu habe ich leider keine Informationen.'
+DB_PATH = os.getenv('DB_PATH', os.path.join(BASE_DIR, 'chats.db'))
 
 app = FastAPI()
 
 
-# ---------- Chat history (SQLite) ----------
+# ---------- Chat-Verlauf (SQLite) ----------
 def db():
   con = sqlite3.connect(DB_PATH)
   con.row_factory = sqlite3.Row
@@ -46,14 +46,14 @@ def history(chat_id):
     return [{'role': r['role'], 'content': r['content']} for r in rows]
 
 def drop_last_turn(chat_id):
-  # Used when the user edits their last question: remove it and the answer after it
+  # Wenn die letzte Frage bearbeitet wird: sie und die Antwort danach löschen
   with db() as con:
     con.execute('''DELETE FROM messages WHERE chat_id = ? AND id >= (
                      SELECT MAX(id) FROM messages WHERE chat_id = ? AND role = 'user')''',
                 (chat_id, chat_id))
 
 
-# ---------- Chat list endpoints (same for both modes) ----------
+# ---------- Chat-Liste (gleich für beide Modi) ----------
 def chat_routes(prefix, mode):
   @app.get(prefix + '/chats')
   def list_chats():
@@ -87,22 +87,16 @@ chat_routes('/api', 'chat')
 chat_routes('/api/rag', 'rag')
 
 
-# ---------- Page + models ----------
+# ---------- Seite + Modelle ----------
 @app.get('/')
 def index():
-  return FileResponse('index.html')
+  return FileResponse(os.path.join(BASE_DIR, 'index.html'))
 
 @app.get('/sioul-avatar.svg')
 def avatar():
-  return FileResponse('sioul-avatar.svg', media_type='image/svg+xml')
+  return FileResponse(os.path.join(BASE_DIR, 'sioul-avatar.svg'), media_type='image/svg+xml')
 
-# Which models appear in the picker, and which base model each one is built on
-# (shown in grey below the name, like in s(i)oul.ai)
-MODELS = {
-  'sioul': 'gemma4:12b',
-  'sioul-mini': 'qwen3.5:4b',
-}
-
+# Modelle für die Auswahl, das Basismodell steht grau unter dem Namen
 @app.get('/api/models')
 def models():
   installed = {m.model.removesuffix(':latest'): m for m in llm.list().models}
@@ -111,7 +105,7 @@ def models():
     m = installed.get(name)
     if m:
       out.append({'name': m.model, 'base': base, 'size': f'{m.size / 1e9:.1f} GB'})
-  if not out:   # none of the s(i)oul models found: show every chat model instead
+  if not out:   # keins der s(i)oul-Modelle installiert: alle Chat-Modelle anzeigen
     out = [{'name': m.model, 'size': f'{m.size / 1e9:.1f} GB'}
            for m in installed.values() if 'embed' not in m.model]
   return out
@@ -124,7 +118,7 @@ class ChatIn(BaseModel):
   replaceLast: bool = False
 
 
-# ---------- Mode "Chat": free chat with the model, streamed ----------
+# ---------- Modus "Chat": freier Chat mit dem Modell, Wort für Wort ----------
 @app.post('/api/chat')
 def chat(body: ChatIn):
   message = body.message.strip()
@@ -150,29 +144,26 @@ def chat(body: ChatIn):
   return StreamingResponse(generate(), media_type='text/plain; charset=utf-8')
 
 
-# ---------- Mode "RAG": answers from the files in data/ ----------
+# ---------- Modus "RAG": Antworten aus den Dateien in data/ ----------
 @app.post('/api/rag/chat')
 def rag_chat(body: ChatIn):
   message = body.message.strip()
   if not message:
     return JSONResponse({'error': 'Leere Nachricht'}, status_code=400)
+  if body.replaceLast:
+    drop_last_turn(body.sessionId)
   save_message(body.sessionId, 'rag', 'user', message)
 
   hits = retrieve(message)
   if not hits:
     answer = NO_INFO
   else:
-    context = '\n'.join(f' - {chunk}' for chunk, _, _ in hits)
-    system = f'''You are a helpful chatbot.
-Use only the following pieces of context to answer the question. Don't make up any new information:
-{context}
-'''
     response = llm.chat(
-      model=body.model or LANGUAGE_MODEL,   # chosen in the picker, LANGUAGE_MODEL as fallback
-      messages=[{'role': 'system', 'content': system}] + history(body.sessionId),
+      model=body.model or LANGUAGE_MODEL,   # aus der Auswahl, sonst LANGUAGE_MODEL
+      messages=[{'role': 'system', 'content': system_prompt(hits)}] + history(body.sessionId),
       think=False,
     )
-    # "(Quelle: ...)" at the end is shown as a source line by your index.html
+    # "(Quelle: ...)" am Ende zeigt index.html als Quellenzeile an
     sources = ', '.join(dict.fromkeys(source for _, _, source in hits if source))
     answer = response['message']['content'].strip() + f'\n\n(Quelle: {sources})'
 
@@ -180,5 +171,57 @@ Use only the following pieces of context to answer the question. Don't make up a
   return {'answer': answer}
 
 
-# Fill Qdrant once at startup (skipped if it already has data)
+# ---------- Sprache: Whisper (Sprache -> Text) und Piper (Text -> Sprache) ----------
+def voice_not_ready():
+  # None, wenn bereit, sonst eine Fehlerantwort (nach einem Fehler wird neu gestartet)
+  if voice.state['status'] == 'ready':
+    return None
+  if voice.state['status'] in ('error', 'off'):
+    err = voice.state.get('error')
+    voice.start()
+    msg = 'Sprachfunktionen nicht verfügbar: ' + err if err else 'Sprachfunktionen werden gestartet ...'
+  else:
+    msg = 'Sprachmodelle werden noch geladen (beim ersten Start einmaliger Download) ...'
+  return JSONResponse({'error': msg}, status_code=503)
+
+@app.get('/api/voice')
+def voice_status():
+  return voice.state
+
+@app.post('/api/stt')
+async def stt(request: Request):
+  data = await request.body()
+  if (error := voice_not_ready()):
+    return error
+  if not data or len(data) > 30 * 1024 * 1024:
+    return JSONResponse({'error': 'Keine oder zu große Aufnahme'}, status_code=400)
+  ctype = request.headers.get('content-type', '').lower()
+  suffix = '.mp4' if ('mp4' in ctype or 'm4a' in ctype or 'aac' in ctype) else \
+           '.ogg' if 'ogg' in ctype else '.wav' if 'wav' in ctype else '.webm'
+  try:
+    return voice.transcribe(data, suffix)
+  except Exception as e:
+    return JSONResponse({'error': 'Spracherkennung fehlgeschlagen: ' + str(e)}, status_code=500)
+
+class TtsIn(BaseModel):
+  text: str
+  lang: str | None = None
+
+@app.post('/api/tts')
+def tts(body: TtsIn):
+  if (error := voice_not_ready()):
+    return error
+  text = body.text.strip()
+  if not text:
+    return JSONResponse({'error': 'Kein Text'}, status_code=400)
+  try:
+    audio, lang = voice.speak(text, body.lang)
+  except Exception as e:
+    return JSONResponse({'error': 'Vorlesen fehlgeschlagen: ' + str(e)}, status_code=500)
+  return Response(audio, media_type='audio/wav', headers={'X-Voice-Lang': lang})
+
+
+# Qdrant beim Start einmal befüllen (übersprungen, wenn schon Daten da sind)
 build_database()
+# Sprachmodelle im Hintergrund laden (beim ersten Start einmaliger Download)
+voice.start()

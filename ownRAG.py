@@ -4,11 +4,20 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 
 # Einstellungen
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, 'data')
 EMBEDDING_MODEL = 'nomic-embed-text:latest'
-LANGUAGE_MODEL = 'gemma4:12b'
 SIMILARITY_THRESHOLD = 0.6
 COLLECTION_NAME = 'documents'
-DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+
+# Modelle in der Auswahl und das Basismodell, auf dem sie jeweils aufbauen
+MODELS = {
+  'sioul': 'gemma4:12b',
+  'sioul-mini': 'qwen3.5:4b',
+}
+LANGUAGE_MODEL = MODELS['sioul']   # Standard, wenn kein Modell gewählt ist
+
+NO_INFO = 'Dazu habe ich leider keine Informationen.'
 
 # Verbindungen (über Umgebungsvariablen, damit es später auch im Container klappt)
 QDRANT_URL = os.getenv('QDRANT_URL', 'http://localhost:6333')
@@ -25,7 +34,7 @@ def build_database():
   if qdrant.collection_exists(COLLECTION_NAME):
     count = qdrant.count(COLLECTION_NAME).count
     if count > 0:
-      print(f'Collection "{COLLECTION_NAME}" already has {count} entries, skipping embedding.')
+      print(f'Collection "{COLLECTION_NAME}" hat schon {count} Einträge, Einbetten wird übersprungen.')
       return
 
   # Alle .txt-Dateien aus data/ einlesen, eine Zeile = ein Chunk
@@ -35,17 +44,17 @@ def build_database():
       continue
     with open(os.path.join(DATA_DIR, filename), 'r', encoding='utf-8') as file:
       dataset += [(line.strip(), filename) for line in file if line.strip()]
-  print(f'Loaded {len(dataset)} entries')
+  print(f'{len(dataset)} Einträge geladen')
 
   if not dataset:
-    print(f'No .txt files found in {DATA_DIR}, skipping embedding.')
+    print(f'Keine .txt-Dateien in {DATA_DIR} gefunden, Einbetten wird übersprungen.')
     return
 
   points = []
   for i, (chunk, source) in enumerate(dataset):
     vector = embed(chunk)
     points.append(PointStruct(id=i, vector=vector, payload={'text': chunk, 'source': source}))
-    print(f'Embedded chunk {i+1}/{len(dataset)}')
+    print(f'Chunk {i+1}/{len(dataset)} eingebettet')
 
   # Collection anlegen, Vektorgröße direkt aus dem ersten Embedding
   if not qdrant.collection_exists(COLLECTION_NAME):
@@ -55,7 +64,7 @@ def build_database():
     )
 
   qdrant.upsert(collection_name=COLLECTION_NAME, points=points)
-  print(f'Stored {len(points)} chunks in Qdrant')
+  print(f'{len(points)} Chunks in Qdrant gespeichert')
 
 def retrieve(query, top_n=3):
   result = qdrant.query_points(
@@ -66,44 +75,46 @@ def retrieve(query, top_n=3):
   )
   return [(point.payload['text'], point.score, point.payload.get('source')) for point in result.points]
 
+# System-Prompt für den RAG-Modus aus den gefundenen Abschnitten
+def system_prompt(hits):
+  context = '\n'.join(f' - {chunk}' for chunk, _, _ in hits)
+  return f'''You are a helpful chatbot.
+Use only the following pieces of context to answer the question. Don't make up any new information:
+{context}
+'''
+
 if __name__ == "__main__":
   build_database()
 
-  # Chatbot
+  # Chatbot im Terminal
   while True:
-    input_query = input('Ask me a question: ')
+    input_query = input('Deine Frage: ')
     if input_query.strip().lower() in ['exit', 'quit']:
-      print('Goodbye!')
+      print('Tschüss!')
       break
     if not input_query:
-      print("Please enter a question or leave with 'exit' or 'quit'.")
+      print("Bitte gib eine Frage ein oder beende mit 'exit' oder 'quit'.")
       continue
     retrieved_knowledge = retrieve(input_query)
 
     if not retrieved_knowledge:
-      print("Dazu habe ich leider keine Informationen.")
+      print(NO_INFO)
     else:
-      print('Retrieved knowledge:')
+      print('Gefundene Abschnitte:')
       for chunk, similarity, source in retrieved_knowledge:
-        print(f' - (similarity: {similarity:.2f}, {source}) {chunk}')
-
-      context = '\n'.join(f' - {chunk}' for chunk, _, _ in retrieved_knowledge)
-      instruction_prompt = f'''You are a helpful chatbot.
-  Use only the following pieces of context to answer the question. Don't make up any new information:
-  {context}
-  '''
+        print(f' - (Ähnlichkeit: {similarity:.2f}, {source}) {chunk}')
 
       stream = llm.chat(
         model=LANGUAGE_MODEL,
         messages=[
-          {'role': 'system', 'content': instruction_prompt},
+          {'role': 'system', 'content': system_prompt(retrieved_knowledge)},
           {'role': 'user', 'content': input_query},
         ],
         stream=True,
         think=False,
       )
 
-      print('Chatbot response:')
+      print('Antwort:')
       for chunk in stream:
         print(chunk['message']['content'], end='', flush=True)
       print()
