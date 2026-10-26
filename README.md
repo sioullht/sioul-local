@@ -16,7 +16,9 @@ deine Daten verlassen nie dein Gerät.
 Getestet auf einem MacBook Air M2 mit 16 GB RAM. Beide Modelle laufen dort
 problemlos.
 
-Impressionen sind im Folder 'Einblicke/' zu finden. 
+![s(i)oul.ai: Modellauswahl, RAG-Modus und Chat-Liste](Einblicke/General_Design.png)
+
+Weitere Screenshots liegen im Ordner [`Einblicke/`](Einblicke/).
 
 ## Voraussetzungen
 
@@ -41,11 +43,15 @@ python3.12 -m pip install -r requirements.txt
 ollama pull gemma4:12b          # größeres Sprachmodell -> 'sioul'
 ollama pull qwen3.5:4b          # kleineres Sprachmodell -> 'sioul-mini'
 ollama pull nomic-embed-text    # Embeddings für die Suche
+
+# Eigene Modelle mit s(i)oul-Persönlichkeit anlegen
+ollama create sioul -f modelfiles/Modelfile
+ollama create sioul-mini -f modelfiles/Modelfile.mini
 ```
 
 > **Hinweis:** In der Modellauswahl erscheinen bevorzugt die Modelle `sioul` und `sioul-mini`.
-> Sie werden aus den Modelfiles im s(i)oul.ai-Projekt erstellt (`ollama create sioul -f Modelfile`).
-> Fehlen sie, zeigt die Auswahl automatisch alle installierten Chat-Modelle an.
+> Die Modelfiles in `modelfiles/` legen dafür das Basismodell und einen kurzen System-Prompt fest.
+> Fehlen die Modelle, zeigt die Auswahl automatisch alle installierten Chat-Modelle an.
 
 ## Starten & stoppen
 
@@ -76,9 +82,9 @@ python3.12 -m uvicorn server:app --port 3001 --reload
 
 | Teil | Wo | Aufgabe |
 |---|---|---|
-| Ollama | Mac | Modelle (nomic-embed-text, gemma4:12b, sioul …) |
+| Ollama | lokal | Modelle (nomic-embed-text, gemma4:12b, sioul …) |
 | Qdrant | Docker | Dokumente aus `data/` als Vektoren |
-| server.py + index.html | Mac | Interface und API |
+| server.py + index.html | lokal | Interface und API |
 | chats.db | Datei im Ordner | Chat-Verlauf (SQLite, wird automatisch angelegt) |
 | models/ | Ordner im Projekt | Whisper- und Piper-Modelle (~600 MB, beim ersten Start geladen) |
 
@@ -89,6 +95,7 @@ python3.12 -m uvicorn server:app --port 3001 --reload
 - `voice.py` – Spracheingabe (Whisper) und Vorlesen (Piper)
 - `index.html` – Interface
 - `data/` – Textdateien für den RAG-Modus (Beispiel: `sioul.txt`)
+- `modelfiles/` – Modelfiles für `sioul` und `sioul-mini`
 - `requirements.txt` – benötigte Python-Pakete
 - `docker-compose.yml` – Qdrant-Container
 
