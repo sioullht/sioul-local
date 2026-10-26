@@ -150,7 +150,7 @@ def chat(body: ChatIn):
   return StreamingResponse(generate(), media_type='text/plain; charset=utf-8')
 
 
-# ---------- Mode "RAG": your cat-facts RAG ----------
+# ---------- Mode "RAG": answers from the files in data/ ----------
 @app.post('/api/rag/chat')
 def rag_chat(body: ChatIn):
   message = body.message.strip()
@@ -162,18 +162,19 @@ def rag_chat(body: ChatIn):
   if not hits:
     answer = NO_INFO
   else:
-    context = '\n'.join(f' - {chunk}' for chunk, _ in hits)
+    context = '\n'.join(f' - {chunk}' for chunk, _, _ in hits)
     system = f'''You are a helpful chatbot.
 Use only the following pieces of context to answer the question. Don't make up any new information:
 {context}
 '''
     response = llm.chat(
-      model=body.model or LANGUAGE_MODEL,   # chosen in the picker, Qwen as fallback
+      model=body.model or LANGUAGE_MODEL,   # chosen in the picker, LANGUAGE_MODEL as fallback
       messages=[{'role': 'system', 'content': system}] + history(body.sessionId),
       think=False,
     )
     # "(Quelle: ...)" at the end is shown as a source line by your index.html
-    answer = response['message']['content'].strip() + '\n\n(Quelle: cat-facts.txt)'
+    sources = ', '.join(dict.fromkeys(source for _, _, source in hits if source))
+    answer = response['message']['content'].strip() + f'\n\n(Quelle: {sources})'
 
   save_message(body.sessionId, 'rag', 'assistant', answer)
   return {'answer': answer}

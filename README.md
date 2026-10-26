@@ -1,14 +1,31 @@
 # s(i)oul.local
 
-Eigenes RAG-System mit Chat-Interface im s(i)oul.ai-Design.
-Zwei Modi: **Chat** (freies Gespräch mit dem Modell) und **RAG** (Antworten nur aus `cat-facts.txt`).
+Ein vollständig lokaler KI-Chat mit eigenem Interface. S(i)oul nutzt ein
+Open-Weight-Modell, das direkt auf deinem Rechner läuft. Über RAG
+(Retrieval-Augmented Generation) beantwortet es Fragen auf Basis eigener
+Dokumente. Es braucht keine Internetverbindung und keinen API-Key, und
+deine Daten verlassen nie dein Gerät.
+
+## Features
+- 💬 Selbstgebautes Chat-Interface
+- 📚 RAG über eigene Textdateien im Ordner `data/`, mit Quellenangabe
+- 🔒 100 % lokal und offline nutzbar
+- ⚖️ Zwei Modellgrößen zur Auswahl
+
+Getestet auf einem MacBook Air M2 mit 16 GB RAM. Beide Modelle laufen dort
+problemlos.
+
+Impressionen sind im Folder 'Einblicke' zu finden. 
 
 ## Voraussetzungen
 
-- **macOS** (die `.command`-Skripte nutzen `open`)
 - [Python 3.12](https://www.python.org/downloads/)
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (für Qdrant)
 - [Ollama](https://ollama.com/download)
+
+Getestet auf macOS. Die `.command`-Skripte zum Starten per Doppelklick
+funktionieren nur auf macOS. Unter Linux und Windows startest du das Projekt
+manuell (siehe [Zum Entwickeln](#zum-entwickeln-änderungen-sofort-live)).
 
 ## Installation
 
@@ -20,7 +37,8 @@ cd sioul-local
 python3.12 -m pip install -r requirements.txt
 
 # Modelle für Ollama
-ollama pull gemma4:12b          # Sprachmodell
+ollama pull gemma4:12b          # größeres Sprachmodell -> 'sioul'
+ollama pull qwen3.5:4b          # kleineres Sprachmodell -> 'sioul-mini'
 ollama pull nomic-embed-text    # Embeddings für die Suche
 ```
 
@@ -39,7 +57,7 @@ Oder einfach im Finder doppelklicken.
 
 Adresse: http://localhost:3001
 
-Beim ersten Start werden die Katzenfakten eingebettet und in Qdrant gespeichert (dauert ein paar Sekunden).
+Beim ersten Start werden alle `.txt`-Dateien aus `data/` eingebettet und in Qdrant gespeichert (dauert ein paar Sekunden).
 Danach wird dieser Schritt übersprungen.
 
 ## Zum Entwickeln (Änderungen sofort live)
@@ -54,7 +72,7 @@ python3.12 -m uvicorn server:app --port 3001 --reload
 | Teil | Wo | Aufgabe |
 |---|---|---|
 | Ollama | Mac | Modelle (nomic-embed-text, gemma4:12b, sioul …) |
-| Qdrant | Docker | Katzenfakten als Vektoren |
+| Qdrant | Docker | Dokumente aus `data/` als Vektoren |
 | server.py + index.html | Mac | Interface und API |
 | chats.db | Datei im Ordner | Chat-Verlauf (SQLite, wird automatisch angelegt) |
 
@@ -63,6 +81,20 @@ python3.12 -m uvicorn server:app --port 3001 --reload
 - `ownRAG.py` – Einbetten, Suchen, Terminal-Chatbot (`python3.12 ownRAG.py`)
 - `server.py` – API für die Webseite
 - `index.html` – Interface
-- `cat-facts.txt` – Beispieldaten für den RAG-Modus
+- `data/` – Textdateien für den RAG-Modus (Beispiel: `sioul.txt`)
 - `requirements.txt` – benötigte Python-Pakete
 - `docker-compose.yml` – Qdrant-Container
+
+## RAG: eigene Dokumente verwenden
+
+Der Ordner `data/` lässt sich beliebig um eigene `.txt`-Dateien erweitern,
+sodass das RAG auf weitere Daten zugreifen kann. Jede Zeile wird ein eigener
+Abschnitt, also am besten eine Aussage pro Zeile. Als Beispiel liegt
+`data/sioul.txt` bei, mit Fakten über dieses Projekt.
+
+Ist Qdrant schon befüllt, leere die Collection einmal, damit die neuen Dateien
+beim nächsten Start eingelesen werden:
+
+```bash
+curl -X DELETE http://localhost:6333/collections/documents
+```

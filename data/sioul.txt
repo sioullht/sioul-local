@@ -1,0 +1,22 @@
+s(i)oul.local ist ein KI-Chat, der vollständig lokal auf dem eigenen Rechner läuft.
+s(i)oul.local braucht keine Internetverbindung und keinen API-Key, alle Daten bleiben auf dem eigenen Gerät.
+Die Sprachmodelle von s(i)oul.local werden über Ollama ausgeführt.
+Das größere Modell heißt sioul und basiert auf gemma4:12b.
+Das kleinere Modell heißt sioul-mini und basiert auf qwen3.5:4b, es antwortet schneller und braucht weniger Arbeitsspeicher.
+Im Chat-Interface lässt sich über eine Modellauswahl zwischen sioul und sioul-mini wechseln.
+s(i)oul.local wurde auf einem MacBook Air M2 mit 16 GB RAM getestet, beide Modelle laufen dort problemlos.
+Das Interface von s(i)oul.local ist eine selbstgebaute Webseite (index.html), die im Browser unter http://localhost:3001 erreichbar ist.
+Das Backend von s(i)oul.local ist ein FastAPI-Server (server.py), der mit uvicorn gestartet wird.
+Der Chat-Verlauf wird in einer SQLite-Datenbank namens chats.db gespeichert, die automatisch angelegt wird.
+s(i)oul.local hat zwei Modi: den normalen Chat und den RAG-Modus.
+RAG steht für Retrieval-Augmented Generation: Das Modell beantwortet Fragen auf Basis eigener Dokumente.
+Im RAG-Modus werden alle .txt-Dateien aus dem Ordner data eingelesen, jede Zeile ist ein eigener Abschnitt.
+Die Texte werden mit dem Embedding-Modell nomic-embed-text in Vektoren umgewandelt.
+Die Vektoren werden in der Vektordatenbank Qdrant gespeichert, die in einem Docker-Container läuft.
+Bei einer Frage sucht s(i)oul.local die drei ähnlichsten Abschnitte heraus und gibt sie dem Sprachmodell als Kontext.
+Findet die Suche keinen ausreichend ähnlichen Abschnitt, antwortet s(i)oul.local, dass es dazu keine Informationen hat.
+Unter jeder RAG-Antwort steht, aus welcher Datei die Informationen stammen.
+Eigene Dokumente fügt man hinzu, indem man eine .txt-Datei in den Ordner data legt und die Qdrant-Collection einmal leert.
+Mit start.command werden Ollama, Qdrant und der Server gestartet und der Browser geöffnet.
+Mit stop.command werden der Server und Qdrant wieder gestoppt.
+Mit ownRAG.py lässt sich der RAG-Modus auch direkt im Terminal ausprobieren.

@@ -806,7 +806,7 @@
         else fillNote(botEl, "stopped", "Gestoppt.");
       } else {
         fillNote(botEl, "error", mode === "docs"
-          ? "Fehler beim RAG. Prüfe: Laufen n8n und Postgres (docker ps) und ist der Workflow „local RAG Agent“ veröffentlicht?\n(" + err.message + ")"
+          ? "Fehler beim RAG. Prüfe: Läuft die Ollama-App? Läuft Qdrant (docker compose ps)? Ist nomic-embed-text installiert (ollama list)?\n(" + err.message + ")"
           : "Fehler beim Senden. Prüfe: Läuft die Ollama-App? Zeigt „ollama list“ das Modell sioul? " +
             "Läuft der Container (docker compose ps)?\n(" + err.message + ")");
       }
@@ -823,7 +823,7 @@
     sendBtn.title = busy ? "Stoppen" : "Senden";
   }
 
-  // ---------- Modus: Chat (s(i)oul) oder Dokumente (RAG über n8n) ----------
+  // ---------- Modus: Chat (s(i)oul) oder Dokumente (RAG über Qdrant) ----------
   let mode = (() => { try { return localStorage.getItem("sioul-mode") === "docs" ? "docs" : "chat"; } catch { return "chat"; } })();
   const apiBase = () => mode === "docs" ? "/api/rag" : "/api";
 
@@ -871,7 +871,7 @@
 
   // Eine Gruppe pro Kalendertag: Heute, Gestern, sonst das Datum
   function groupOf(ts) {
-    if (!ts) return "Früher";                      // n8n speichert für ältere Chats keine Uhrzeit
+    if (!ts) return "Früher";                      // ältere Chats haben keine Uhrzeit gespeichert
     const d = new Date(ts * 1000), now = new Date();
     const day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
     const diff = Math.round((day(now) - day(d)) / 864e5);

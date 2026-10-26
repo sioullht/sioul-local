@@ -7,7 +7,8 @@ from qdrant_client.models import Distance, VectorParams, PointStruct
 EMBEDDING_MODEL = 'nomic-embed-text:latest'
 LANGUAGE_MODEL = 'gemma4:12b'
 SIMILARITY_THRESHOLD = 0.6
-COLLECTION_NAME = 'cat_facts'
+COLLECTION_NAME = 'documents'
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
 
 # Verbindungen (über Umgebungsvariablen, damit es später auch im Container klappt)
 QDRANT_URL = os.getenv('QDRANT_URL', 'http://localhost:6333')
@@ -27,14 +28,23 @@ def build_database():
       print(f'Collection "{COLLECTION_NAME}" already has {count} entries, skipping embedding.')
       return
 
-  with open('cat-facts.txt', 'r') as file:
-    dataset = [line.strip() for line in file if line.strip()]
+  # Alle .txt-Dateien aus data/ einlesen, eine Zeile = ein Chunk
+  dataset = []
+  for filename in sorted(os.listdir(DATA_DIR)):
+    if not filename.endswith('.txt'):
+      continue
+    with open(os.path.join(DATA_DIR, filename), 'r', encoding='utf-8') as file:
+      dataset += [(line.strip(), filename) for line in file if line.strip()]
   print(f'Loaded {len(dataset)} entries')
 
+  if not dataset:
+    print(f'No .txt files found in {DATA_DIR}, skipping embedding.')
+    return
+
   points = []
-  for i, chunk in enumerate(dataset):
+  for i, (chunk, source) in enumerate(dataset):
     vector = embed(chunk)
-    points.append(PointStruct(id=i, vector=vector, payload={'text': chunk}))
+    points.append(PointStruct(id=i, vector=vector, payload={'text': chunk, 'source': source}))
     print(f'Embedded chunk {i+1}/{len(dataset)}')
 
   # Collection anlegen, Vektorgröße direkt aus dem ersten Embedding
@@ -54,7 +64,7 @@ def retrieve(query, top_n=3):
     limit=top_n,
     score_threshold=SIMILARITY_THRESHOLD,
   )
-  return [(point.payload['text'], point.score) for point in result.points]
+  return [(point.payload['text'], point.score, point.payload.get('source')) for point in result.points]
 
 if __name__ == "__main__":
   build_database()
@@ -74,10 +84,10 @@ if __name__ == "__main__":
       print("Dazu habe ich leider keine Informationen.")
     else:
       print('Retrieved knowledge:')
-      for chunk, similarity in retrieved_knowledge:
-        print(f' - (similarity: {similarity:.2f}) {chunk}')
+      for chunk, similarity, source in retrieved_knowledge:
+        print(f' - (similarity: {similarity:.2f}, {source}) {chunk}')
 
-      context = '\n'.join(f' - {chunk}' for chunk, _ in retrieved_knowledge)
+      context = '\n'.join(f' - {chunk}' for chunk, _, _ in retrieved_knowledge)
       instruction_prompt = f'''You are a helpful chatbot.
   Use only the following pieces of context to answer the question. Don't make up any new information:
   {context}
