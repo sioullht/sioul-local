@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 from pydantic import BaseModel
 
 import voice  # Whisper + Piper (Sprache)
+from agent import AGENT_MODEL, agent_steps
 from ownRAG import BASE_DIR, LANGUAGE_MODEL, MODELS, NO_INFO, build_database, llm, retrieve, system_prompt
 
 DB_PATH = os.getenv('DB_PATH', os.path.join(BASE_DIR, 'chats.db'))
@@ -85,6 +86,7 @@ def chat_routes(prefix, mode):
 
 chat_routes('/api', 'chat')
 chat_routes('/api/rag', 'rag')
+chat_routes('/api/agent', 'agent')
 
 
 # ---------- Seite + Modelle ----------
@@ -170,6 +172,38 @@ def rag_chat(body: ChatIn):
 
   save_message(body.sessionId, 'rag', 'assistant', answer)
   return {'answer': answer}
+
+
+# ---------- Modus "Agent": Modell entscheidet selbst, welche Tools es nutzt ----------
+@app.post('/api/agent/chat')
+def agent_chat(body: ChatIn):
+  message = body.message.strip()
+  if not message:
+    return JSONResponse({'error': 'Leere Nachricht'}, status_code=400)
+  if body.replaceLast:
+    drop_last_turn(body.sessionId)
+  save_message(body.sessionId, 'agent', 'user', message)
+  messages = history(body.sessionId)
+
+  def generate():
+    answer = ''
+    try:
+      # Modellauswahl wird hier ignoriert: Gemma bricht bei Tool-Calls mit System-Prompt ab
+      for event in agent_steps(messages, model=AGENT_MODEL):
+        if event['type'] == 'token':
+          answer += event['text']
+          yield event['text']
+        elif event['type'] == 'tool_call':
+          print(f'[agent] {event["name"]}({event["args"]})')
+          # Text vor dem Tool-Aufruf nicht mit der Antwort danach verkleben
+          if answer.strip() and not answer.endswith('\n\n'):
+            answer += '\n\n'
+            yield '\n\n'
+    finally:
+      if answer.strip():
+        save_message(body.sessionId, 'agent', 'assistant', answer)
+
+  return StreamingResponse(generate(), media_type='text/plain; charset=utf-8')
 
 
 # ---------- Sprache: Whisper (Sprache -> Text) und Piper (Text -> Sprache) ----------

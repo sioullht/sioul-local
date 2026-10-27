@@ -198,10 +198,10 @@
   .app { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
   header { padding: 10px 12px; display: flex; gap: 4px; position: relative; align-items: center; }
 
-  /* ---------- Schalter Chat | Dokumente ---------- */
+  /* ---------- Schalter Chat | RAG | Agent ---------- */
   .mode-switch {
     position: absolute; left: 50%; top: 10px; transform: translateX(-50%);
-    display: grid; grid-template-columns: 1fr 1fr; padding: 3px; gap: 0;
+    display: grid; grid-template-columns: 1fr 1fr 1fr; padding: 3px; gap: 0;
     background: rgba(28,24,38,.85); border: 1px solid var(--border); border-radius: 999px;
   }
   .mode-switch button {
@@ -211,14 +211,60 @@
   .mode-switch button[aria-selected="true"] { color: var(--text); }
   .mode-switch button:disabled { cursor: default; }
   .mode-pill {
-    position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc(50% - 3px);
+    position: absolute; top: 3px; bottom: 3px; left: 3px; width: calc((100% - 6px) / 3);
     border-radius: 999px; background: var(--panel-hover); border: 1px solid #3a3150;
     transition: transform .3s cubic-bezier(.2,.7,.2,1);
   }
   body.mode-docs .mode-pill { transform: translateX(100%); }
+  body.mode-agent .mode-pill { transform: translateX(200%); }
   body.mode-docs .uacts { display: none !important; }       /* Bearbeiten: nur im Chat-Modus */
   .msg.bot .source { display: block; margin-top: 8px; color: var(--muted); font-size: 13px; }
-  @media (max-width: 640px) { .mode-switch button { padding: 6px 14px; } .brand { display: none; } }
+  /* Handy: Tabs in eigener Zeile unter der Kopfzeile, ohne "s(i)oul" davor */
+  @media (max-width: 640px) {
+    header { flex-wrap: wrap; }
+    .mode-switch { position: relative; left: auto; top: auto; transform: none; order: 1; width: 100%; margin-top: 6px; }
+    .mode-switch button { padding: 6px 12px; } .mode-prefix { display: none; } .brand { display: none; } }
+
+  /* Handy: Seitenleiste links, aufklappbar über das Dreieck links in der Mitte.
+     Verlauf, Neuer Chat, Modellauswahl und Konto werden per JS hineinverschoben. */
+  .side-toggle, .side-panel, .side-backdrop { display: none; }
+  @media (max-width: 640px) {
+    .side-toggle {
+      display: inline-flex; align-items: center; justify-content: center;
+      position: fixed; left: 0; top: 50%; transform: translateY(-50%); z-index: 21;
+      width: 30px; height: 52px; border: 0; border-radius: 0 12px 12px 0; cursor: pointer;
+      background: transparent; color: var(--accent);
+      filter: drop-shadow(0 0 8px rgba(124,92,255,.55));
+      transition: left .35s cubic-bezier(.2,.7,.2,1);
+    }
+    .side-toggle:hover { background: rgba(124,92,255,.14); }
+    .side-toggle svg { width: 24px; height: 24px; transition: transform .35s cubic-bezier(.2,.7,.2,1); }
+    body.side-open .side-toggle { left: min(260px, 80vw); }
+    body.side-open .side-toggle svg { transform: rotate(180deg); }
+
+    .side-panel {
+      display: flex; flex-direction: column; gap: 4px;
+      position: fixed; left: 0; top: 0; bottom: 0; z-index: 20; width: min(260px, 80vw);
+      padding: 16px 12px; background: var(--panel); border-right: 1px solid var(--border);
+      box-shadow: 20px 0 50px rgba(0,0,0,.45);
+      transform: translateX(-100%); transition: transform .35s cubic-bezier(.2,.7,.2,1);
+    }
+    body.side-open .side-panel { transform: none; }
+    .side-backdrop {
+      display: block; position: fixed; inset: 0; z-index: 19; background: rgba(0,0,0,.45);
+      opacity: 0; pointer-events: none; transition: opacity .35s;
+    }
+    body.side-open .side-backdrop { opacity: 1; pointer-events: auto; }
+
+    /* Elemente in der Leiste: volle Breite, mit Beschriftung */
+    .side-panel > .icon-btn, .side-panel .model-btn { width: 100%; justify-content: flex-start; padding: 10px 12px; }
+    .side-panel #openSpiral::after { content: "Verlauf"; }
+    .side-panel #newChat::after { content: "Neuer Chat"; }
+    .side-panel .model-picker { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); }
+    .side-panel .model-menu { left: 0; right: 0; min-width: 0; }
+    .side-panel .account { position: static; margin-top: auto; padding: 6px 14px 6px 6px; }
+    .side-panel .account .account-text { display: flex; }
+  }
 
   main { flex: 1; overflow-y: auto; padding: 8px 16px 24px; }
   .messages { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
@@ -451,6 +497,13 @@
 <button class="drawer-toggle" id="drawerToggle" title="Chat-Liste ausklappen" aria-label="Chat-Liste ausklappen" aria-expanded="false">
   <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 6.5 21 18H3Z"/></svg>
 </button>
+<!-- Handy: Seitenleiste mit Verlauf, Neuer Chat, Modellauswahl und Konto (Dreieck links in der Mitte) -->
+<button class="side-toggle" id="sideToggle" title="Seitenleiste öffnen" aria-label="Seitenleiste öffnen" aria-expanded="false">
+  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6.5 3 18 12 6.5 21Z"/></svg>
+</button>
+<div class="side-backdrop" id="sideBackdrop"></div>
+<aside class="side-panel" id="sidePanel" aria-label="Seitenleiste"></aside>
+
 <div class="drawer" id="drawer" aria-hidden="true">
   <div class="drawer-head">
     <h3>Alle Chats</h3>
@@ -477,8 +530,9 @@
     </button>
     <div class="mode-switch" role="tablist" aria-label="Modus">
       <span class="mode-pill"></span>
-      <button type="button" role="tab" data-mode="chat" aria-selected="true" title="Freier Chat mit s(i)oul">Chat</button>
-      <button type="button" role="tab" data-mode="docs" aria-selected="false" title="Fragen an das s(i)oul.RAG!-System">RAG</button>
+      <button type="button" role="tab" data-mode="chat" aria-selected="true" title="Freier Chat mit s(i)oul"><span class="mode-prefix">s(i)oul</span>Chat</button>
+      <button type="button" role="tab" data-mode="docs" aria-selected="false" title="Fragen an das s(i)oulRAG!-System"><span class="mode-prefix">s(i)oul</span>RAG!</button>
+      <button type="button" role="tab" data-mode="agent" aria-selected="false" title="s(i)oul entscheidet selbst, wann es Tools wie die Dokumentsuche nutzt"><span class="mode-prefix">s(i)oul</span>Agent!</button>
     </div>
     <div class="model-picker">
       <button class="icon-btn model-btn" id="modelBtn" type="button" title="Modell wählen">
@@ -772,7 +826,7 @@
         else fillNote(botEl, "error", "Keine Antwort erhalten.");
         return;
       }
-      const res = await fetch("/api/chat", {
+      const res = await fetch(apiBase() + "/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, message: text, model: currentModel.name, replaceLast: !!opts.replaceLast }),
@@ -822,8 +876,8 @@
   }
 
   // ---------- Modus: Chat (s(i)oul) oder Dokumente (RAG über Qdrant) ----------
-  let mode = (() => { try { return localStorage.getItem("sioul-mode") === "docs" ? "docs" : "chat"; } catch { return "chat"; } })();
-  const apiBase = () => mode === "docs" ? "/api/rag" : "/api";
+  let mode = (() => { try { const m = localStorage.getItem("sioul-mode"); return m === "docs" || m === "agent" ? m : "chat"; } catch { return "chat"; } })();
+  const apiBase = () => ({ docs: "/api/rag", agent: "/api/agent" })[mode] || "/api";
 
   // ---------- Verlauf aus der Datenbank ----------
   async function api(path, options) {
@@ -1624,12 +1678,47 @@
   });
   document.getElementById("openSpiral").addEventListener("click", openSpiral);
 
+  // ---------- Seitenleiste (nur Handy) ----------
+  const sideToggle = document.getElementById("sideToggle");
+  const sidePanel = document.getElementById("sidePanel");
+  const sideParts = [document.getElementById("openSpiral"), document.getElementById("newChat"),
+                     document.querySelector(".model-picker"), document.querySelector(".account")];
+  const modeSwitchEl = document.querySelector(".mode-switch");
+  const phone = matchMedia("(max-width: 640px)");
+
+  function setSide(open) {
+    document.body.classList.toggle("side-open", open);
+    sideToggle.setAttribute("aria-expanded", String(open));
+    sideToggle.setAttribute("aria-label", open ? "Seitenleiste schließen" : "Seitenleiste öffnen");
+  }
+  // Auf dem Handy wandern die Elemente in die Leiste, am Desktop zurück an ihren Platz
+  function placeSideParts() {
+    const [spiralBtn, newBtn, picker, account] = sideParts;
+    if (phone.matches) {
+      sidePanel.append(...sideParts);
+    } else {
+      modeSwitchEl.before(spiralBtn, newBtn);
+      modeSwitchEl.after(picker);
+      document.getElementById("app").before(account);
+      setSide(false);
+    }
+  }
+  placeSideParts();
+  phone.addEventListener("change", placeSideParts);
+  sideToggle.addEventListener("click", () => setSide(!document.body.classList.contains("side-open")));
+  document.getElementById("sideBackdrop").addEventListener("click", () => setSide(false));
+  // Nach einer Aktion in der Leiste wieder schließen
+  sidePanel.addEventListener("click", (e) => {
+    if (e.target.closest("#openSpiral, #newChat, .model-opt")) setSide(false);
+  });
+
   const modeButtons = document.querySelectorAll(".mode-switch button");
   function applyMode() {
     document.body.classList.toggle("mode-docs", mode === "docs");
+    document.body.classList.toggle("mode-agent", mode === "agent");
     modeButtons.forEach(b => b.setAttribute("aria-selected", String(b.dataset.mode === mode)));
-    input.placeholder = mode === "docs" ? "Frag s(i)oul.RAG! …" : "Frag s(i)oul …";
-    document.getElementById("spiralTitle").textContent = mode === "docs" ? "Zeitspirale · RAG" : "Zeitspirale";
+    input.placeholder = { docs: "Frag s(i)oulRAG! …", agent: "Frag s(i)oulAgent! …" }[mode] || "Frag s(i)oul …";
+    document.getElementById("spiralTitle").textContent = { docs: "Zeitspirale · RAG", agent: "Zeitspirale · Agent" }[mode] || "Zeitspirale";
     document.getElementById("accountSub").textContent = "Lokal · " + (currentModel.base || shortName(currentModel));
   }
   function setMode(m) {
