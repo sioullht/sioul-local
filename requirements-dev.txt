@@ -1,0 +1,6 @@
+# Pakete für Linting und Tests (lokal und in der CI-Pipeline)
+# Nur das Nötigste: Ollama und Qdrant müssen dafür NICHT laufen
+ruff==0.17.3
+pytest==9.2.0
+ollama==0.6.3
+qdrant-client==1.19.1
