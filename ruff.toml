@@ -1,0 +1,17 @@
+# Einstellungen für ruff (Linter und Formatierer)
+# Gelten lokal genauso wie später in der CI-Pipeline
+
+target-version = "py312"
+line-length = 130
+indent-width = 2
+
+# Ordner, die nicht unser eigener Code sind
+extend-exclude = ["build", "dist", "models", "qdrant_data"]
+
+[lint]
+ignore = [
+  "BLE001",  # except Exception ist Absicht: die App soll bei Fehlern weiterlaufen statt abzustürzen
+]
+
+[format]
+quote-style = "single"
