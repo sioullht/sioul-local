@@ -1,0 +1,28 @@
+# CI-Pipeline: prüft den Code bei jedem Push und Pull Request
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:  # erlaubt manuelles Starten auf GitHub
+
+jobs:
+  lint:
+    name: Linting (ruff)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Code auschecken
+        uses: actions/checkout@v4
+
+      - name: Python 3.12 einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: ruff installieren
+        run: pip install ruff==0.17.3  # feste Version: lokal und in der CI gleiche Regeln
+
+      - name: ruff check
+        run: ruff check --output-format=github .
