@@ -6,3 +6,5 @@ pydantic==2.14.1
 faster-whisper==1.2.1
 piper-tts==1.8.0
 certifi==2023.11.17
+pywebview==6.2.1
+py2app==0.28.10

@@ -306,7 +306,10 @@
   textarea {
     width: 100%; resize: none; border: 0; outline: 0; background: transparent;
     color: var(--text); font: inherit; max-height: 200px; min-height: 24px;
+    overflow-y: hidden;   /* Scrollleiste erst, wenn der Text wirklich länger als 200px ist (autoGrow) */
+    overflow-x: hidden;   /* nie waagerecht scrollen: Text bricht um, Zoom-Rundung erzeugt sonst eine Leiste */
   }
+  :root { color-scheme: dark; }   /* dunkle Scrollleisten und Formularelemente vom System */
   textarea::placeholder { color: var(--muted); }
   .composer-row { display: flex; justify-content: flex-end; align-items: center; gap: 6px; }
 
@@ -320,6 +323,10 @@
   .mic svg { width: 19px; height: 19px; }
   .mic.recording { background: var(--danger); color: #fff; animation: pulse 1.4s infinite; }
   .mic.working { color: var(--brand-teal); cursor: progress; animation: spin-fade 1s infinite alternate; }
+  /* Gesprächsmodus: hört zu (türkis pulsierend), erkennt/denkt, spricht (lila) */
+  .convo[data-state="listening"] { background: var(--brand-teal); color: #111; animation: pulse 1.4s infinite; }
+  .convo[data-state="thinking"] { color: var(--brand-teal); animation: spin-fade 1s infinite alternate; }
+  .convo[data-state="speaking"] { background: var(--accent); color: #1a1428; }
   @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(229,120,109,.55); } 100% { box-shadow: 0 0 0 12px rgba(229,120,109,0); } }
   @keyframes spin-fade { from { opacity: 1; } to { opacity: .35; } }
 
@@ -558,6 +565,9 @@
     <form class="composer" id="form">
       <textarea id="input" rows="1" placeholder="Frag s(i)oul …" autofocus></textarea>
       <div class="composer-row">
+        <button class="mic convo" id="convo" type="button" data-state="off" title="Gesprächsmodus: zuhören und nach einer Pause automatisch senden" aria-label="Gesprächsmodus" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12h-2c-.894 0-1.662-.857-1.761-2-.296-3.45-.749-6-2.749-6s-2.5 3.582-2.5 8-.5 8-2.5 8-2.452-2.547-2.749-6c-.1-1.147-.867-2-1.763-2h-2"/></svg>
+        </button>
         <button class="mic" id="mic" type="button" title="Spracheingabe" aria-label="Spracheingabe">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></svg>
         </button>
@@ -756,7 +766,12 @@
     bubble.replaceWith(box);
     wrap.classList.add("is-editing");
 
-    const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 240) + "px"; };
+    const grow = () => {
+      ta.style.height = "auto";
+      const h = ta.scrollHeight + 1;
+      ta.style.height = Math.min(h, 240) + "px";
+      ta.style.overflowY = h > 240 ? "auto" : "hidden";
+    };
     const changed = () => ta.value.trim() && ta.value.trim() !== original.trim();
     const cancel = () => { box.replaceWith(bubble); wrap.classList.remove("is-editing"); input.focus(); };
     const submit = () => {
@@ -1603,8 +1618,9 @@
   async function toggleMic() {
     if (recorder && recorder.state === "recording") { recorder.stop(); return; }
     if (micBtn.classList.contains("working")) return;
+    if (convoOn) stopConvo();   // nicht zwei Aufnahmen gleichzeitig
     if (!navigator.mediaDevices || !window.MediaRecorder) {
-      alert("Dieser Browser unterstützt keine Aufnahme. Öffne s(i)oul über http://localhost:3001.");
+      alert("Aufnahme ist hier nicht möglich. Nutze die s(i)oul-App oder öffne s(i)oul in Safari oder Chrome.");
       return;
     }
     try {
@@ -1643,9 +1659,145 @@
   }
   micBtn.addEventListener("click", toggleMic);
 
+  // ---------- Gesprächsmodus: zuhören, nach einer Pause automatisch senden, Antwort vorlesen ----------
+  // Ablauf pro Runde: zuhören -> Whisper -> send() -> Antwort vorlesen -> wieder zuhören
+  const convoBtn = document.getElementById("convo");
+  const SILENCE_MS = 1500;     // so lange Stille nach dem Sprechen = Satz zu Ende
+  const MIN_SPEECH_MS = 250;   // kürzere Geräusche (Klicken, Husten) zählen nicht als Sprechen
+  const MAX_TURN_MS = 30000;   // Sicherheitsgrenze: danach wird die Runde neu begonnen
+  let convoOn = false, convoStream = null, convoCtx = null;
+
+  function setConvoState(s) {
+    convoBtn.dataset.state = s;
+    convoBtn.setAttribute("aria-pressed", String(s !== "off"));
+    convoBtn.title = {
+      listening: "Ich höre zu, eine kurze Pause schickt ab (klicken zum Beenden)",
+      thinking: "Wird erkannt …",
+      speaking: "s(i)oul spricht (klicken zum Beenden)",
+    }[s] || "Gesprächsmodus: zuhören und nach einer Pause automatisch senden";
+    if (s === "listening") input.placeholder = "Ich höre zu … (Pause = senden)";
+    else if (s === "off") applyMode();   // normalen Platzhalter zurück
+  }
+
+  // Eine Runde aufnehmen. Gibt die Aufnahme zurück, oder null, wenn niemand gesprochen hat.
+  function recordTurn() {
+    return new Promise((resolve) => {
+      const analyser = convoCtx.createAnalyser();
+      analyser.fftSize = 1024;
+      const source = convoCtx.createMediaStreamSource(convoStream);
+      source.connect(analyser);
+      const samples = new Float32Array(analyser.fftSize);
+      const rec = new MediaRecorder(convoStream);
+      const parts = [];
+      rec.ondataavailable = e => { if (e.data.size) parts.push(e.data); };
+      rec.onstop = () => {
+        source.disconnect();
+        resolve(spoke ? new Blob(parts, { type: rec.mimeType || "audio/webm" }) : null);
+      };
+      rec.start();
+
+      const started = performance.now();
+      let noise = 0.01, speechStart = 0, lastVoice = 0, spoke = false;
+      const finish = () => { if (rec.state !== "inactive") rec.stop(); };
+      const tick = () => {
+        if (!convoOn || rec.state === "inactive") { finish(); return; }
+        // Lautstärke (RMS) der letzten ~20 ms messen
+        analyser.getFloatTimeDomainData(samples);
+        let sum = 0;
+        for (const v of samples) sum += v * v;
+        const level = Math.sqrt(sum / samples.length);
+        const now = performance.now();
+        // Schwelle passt sich dem Grundrauschen im Raum an
+        const loud = level > Math.max(0.015, noise * 3);
+        if (loud) {
+          if (!speechStart) speechStart = now;
+          lastVoice = now;
+          if (now - speechStart > MIN_SPEECH_MS) spoke = true;
+        } else {
+          if (!speechStart) noise = noise * 0.95 + level * 0.05;
+          if (speechStart && !spoke && now - lastVoice > 300) speechStart = 0;   // nur ein kurzes Geräusch
+        }
+        if ((spoke && now - lastVoice > SILENCE_MS) || now - started > MAX_TURN_MS) { finish(); return; }
+        setTimeout(tick, 50);
+      };
+      tick();
+    });
+  }
+
+  // Wartet, bis die Antwort fertig vorgelesen (oder das Vorlesen gestoppt) ist
+  function audioDone() {
+    return new Promise((resolve) => {
+      if (!audio || audio.paused) return resolve();
+      audio.addEventListener("ended", resolve, { once: true });
+      audio.addEventListener("pause", resolve, { once: true });
+    });
+  }
+
+  async function convoLoop() {
+    while (convoOn) {
+      setConvoState("listening");
+      const blob = await recordTurn();
+      if (!convoOn) break;
+      if (!blob) continue;                 // nichts gesagt: weiter zuhören
+      setConvoState("thinking");
+      let text = "";
+      try {
+        const res = await fetch("/api/stt", { method: "POST", headers: { "Content-Type": blob.type }, body: blob });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Status " + res.status);
+        text = (data.text || "").trim();
+      } catch (err) {
+        stopConvo();
+        alert("Spracherkennung fehlgeschlagen: " + err.message);
+        break;
+      }
+      if (!text || !convoOn || busy) continue;
+      await send(text);
+      if (!convoOn) break;
+      // Antwort vorlesen und abwarten, sonst würde s(i)oul sich selbst zuhören
+      const bots = document.querySelectorAll(".msg.bot");
+      const last = bots[bots.length - 1];
+      const btn = last?.querySelector(".msg-actions .act");
+      if (btn) {
+        setConvoState("speaking");
+        await speak(last, btn);
+        await audioDone();
+      }
+    }
+  }
+
+  async function startConvo() {
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+      alert("Aufnahme ist hier nicht möglich. Nutze die s(i)oul-App oder öffne s(i)oul in Safari oder Chrome.");
+      return;
+    }
+    try {
+      convoStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    } catch (err) {
+      alert("Kein Zugriff aufs Mikrofon. Bitte erlauben.\n(" + err.message + ")");
+      return;
+    }
+    convoCtx = new AudioContext();
+    convoOn = true;
+    convoLoop();
+  }
+  function stopConvo() {
+    convoOn = false;
+    stopSpeaking();
+    convoStream?.getTracks().forEach(t => t.stop());
+    convoStream = null;
+    convoCtx?.close();
+    convoCtx = null;
+    setConvoState("off");
+  }
+  convoBtn.addEventListener("click", () => convoOn ? stopConvo() : startConvo());
+
   function autoGrow() {
     input.style.height = "auto";
-    input.style.height = Math.min(input.scrollHeight, 200) + "px";
+    // +1 gegen Rundungsfehler beim Zoomen, sonst ist das Feld einen Bruchteil zu klein
+    const h = input.scrollHeight + 1;
+    input.style.height = Math.min(h, 200) + "px";
+    input.style.overflowY = h > 200 ? "auto" : "hidden";
   }
   input.addEventListener("input", () => { autoGrow(); updateButton(); });
   input.addEventListener("keydown", (e) => {
@@ -1677,6 +1829,27 @@
     }
   });
   document.getElementById("openSpiral").addEventListener("click", openSpiral);
+
+  // ---------- Zoom mit ⌘+ / ⌘− / ⌘0, nur in der Mac-App (der Browser kann das selbst) ----------
+  const ZOOM_STEPS = [0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
+  let pageZoom = (() => { try { return Number(localStorage.getItem("sioul-zoom")) || 1; } catch { return 1; } })();
+  function applyZoom() {
+    window.pywebview?.api?.zoom(pageZoom);
+    try { localStorage.setItem("sioul-zoom", String(pageZoom)); } catch {}
+  }
+  window.addEventListener("pywebviewready", applyZoom);   // gespeicherte Größe beim Start
+  document.addEventListener("keydown", (e) => {
+    if (!window.pywebview || !(e.metaKey || e.ctrlKey)) return;
+    let i = ZOOM_STEPS.findIndex(z => z >= pageZoom - 0.001);
+    if (i < 0) i = ZOOM_STEPS.indexOf(1);
+    if (e.key === "+" || e.key === "=") i = Math.min(i + 1, ZOOM_STEPS.length - 1);
+    else if (e.key === "-") i = Math.max(i - 1, 0);
+    else if (e.key === "0") i = ZOOM_STEPS.indexOf(1);
+    else return;
+    e.preventDefault();
+    pageZoom = ZOOM_STEPS[i];
+    applyZoom();
+  });
 
   // ---------- Seitenleiste (nur Handy) ----------
   const sideToggle = document.getElementById("sideToggle");

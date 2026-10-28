@@ -1,3 +1,4 @@
+import atexit
 import os
 import ollama
 from qdrant_client import QdrantClient
@@ -22,8 +23,13 @@ NO_INFO = 'Dazu habe ich leider keine Informationen.'
 # Verbindungen (über Umgebungsvariablen, damit es später auch im Container klappt)
 QDRANT_URL = os.getenv('QDRANT_URL', 'http://localhost:6333')
 OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://localhost:11434')
+# Ist QDRANT_PATH gesetzt, läuft Qdrant ohne Docker direkt in Python und speichert
+# in diesem Ordner (für die Desktop-App). Dann darf nur ein Programm gleichzeitig zugreifen.
+QDRANT_PATH = os.getenv('QDRANT_PATH')
 
-qdrant = QdrantClient(url=QDRANT_URL)
+qdrant = QdrantClient(path=QDRANT_PATH) if QDRANT_PATH else QdrantClient(url=QDRANT_URL)
+if QDRANT_PATH:
+  atexit.register(qdrant.close)   # Ordner beim Beenden sauber freigeben
 llm = ollama.Client(host=OLLAMA_URL)
 
 def embed(text):

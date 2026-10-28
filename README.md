@@ -12,6 +12,9 @@ deine Daten verlassen nie dein Gerät.
 - 🔒 100 % lokal und offline nutzbar
 - ⚖️ Zwei Modellgrößen zur Auswahl
 - 🎙️ Spracheingabe (Whisper) und Vorlesen der Antworten (Piper), Deutsch und Englisch
+- 🤖 Agent-Modus: Das Modell entscheidet selbst, ob es in den Dokumenten sucht
+  oder eine App öffnet (selbst gebaute Tool-Schleife, kein Framework)
+- 🖥️ Als Web-Anwendung im Browser oder als eigene Mac-App mit Icon im Dock
 
 Getestet auf einem MacBook Air M2 mit 16 GB RAM. Beide Modelle laufen dort
 problemlos.
@@ -71,12 +74,43 @@ Beim ersten Start werden außerdem die Sprachmodelle für Whisper und Piper
 (~600 MB) in den Ordner `models/` geladen. Dafür wird einmal Internet gebraucht,
 danach funktionieren Spracheingabe und Vorlesen offline.
 
+## Als Mac-App (ohne Browser und ohne Docker)
+
+```bash
+./build_app.command   # erzeugt dist/s(i)oul.app
+```
+
+Die App in den Programme-Ordner ziehen und von dort ins Dock. Ein Klick startet
+Ollama (falls nötig), Qdrant und den Server und öffnet s(i)oul in einem eigenen
+Fenster. Beim Schließen wird alles wieder beendet.
+
+- Qdrant läuft in der App ohne Docker und speichert in `qdrant_data/`.
+- Die App nutzt Port 3002, die Web-Version 3001.
+- Die App ist eine **Verweis-App**: Sie startet `desktop.py` aus diesem Ordner.
+  Code-Änderungen wirken sofort. Nur neu bauen, wenn der Projektordner verschoben wird
+  oder sich `setup.py` bzw. das Icon ändert.
+- Ohne zu bauen geht es auch mit `python3.12 desktop.py`.
+- Log-Datei: `~/Library/Logs/sioul.log`
+
 ## Zum Entwickeln (Änderungen sofort live)
 
 ```bash
 docker compose up -d qdrant
 python3.12 -m uvicorn server:app --port 3001 --reload
 ```
+
+### Qdrant ohne Docker
+
+Statt im Docker-Container kann Qdrant auch direkt in Python laufen und seine
+Daten in einem Ordner speichern. Dafür die Umgebungsvariable `QDRANT_PATH` setzen:
+
+```bash
+QDRANT_PATH=qdrant_data python3.12 -m uvicorn server:app --port 3001 --reload
+```
+
+Dann darf immer nur ein Programm gleichzeitig auf den Ordner zugreifen
+(also nicht Server und `agent.py` parallel). Ohne `QDRANT_PATH` wird wie bisher
+der Docker-Container genutzt.
 
 ## Was läuft wo
 
@@ -92,6 +126,10 @@ python3.12 -m uvicorn server:app --port 3001 --reload
 
 - `ownRAG.py` – Einbetten, Suchen, Terminal-Chatbot (`python3.12 ownRAG.py`)
 - `server.py` – API für die Webseite
+- `agent.py` – Agent-Schleife mit Tool-Calling (`python3.12 agent.py` für den Terminal-Agent)
+- `tools.py` – Tools des Agents: Dokumente durchsuchen, Dateien lesen, Uhrzeit, Apps öffnen
+- `desktop.py` – Mac-App: startet den Server und öffnet ein eigenes Fenster
+- `setup.py`, `build_app.command` – bauen `s(i)oul.app`
 - `voice.py` – Spracheingabe (Whisper) und Vorlesen (Piper)
 - `index.html` – Interface
 - `data/` – Textdateien für den RAG-Modus (Beispiel: `sioul.txt`)
