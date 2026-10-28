@@ -9,7 +9,6 @@ Jedes Tool besteht aus zwei Teilen:
 Das Modell sieht nur das Schema. Wenn es ein Tool aufrufen will, antwortet es
 statt mit Text mit einem Tool-Call (Name + Argumente). Den führen wir hier aus.
 """
-import json
 import os
 import subprocess
 import sys
