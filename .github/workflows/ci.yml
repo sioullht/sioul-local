@@ -26,3 +26,22 @@ jobs:
 
       - name: ruff check
         run: ruff check --output-format=github .
+
+  test:
+    name: Tests (pytest)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Code auschecken
+        uses: actions/checkout@v4
+
+      - name: Python 3.12 einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Pakete installieren
+        run: pip install -r requirements-dev.txt  # nicht requirements.txt: Whisper, Piper usw. braucht der Test nicht
+
+      - name: pytest
+        run: pytest -v
