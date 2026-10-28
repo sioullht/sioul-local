@@ -153,7 +153,6 @@ def speak(text, lang=None):
         lang = detect_lang(text)
     voice = _voices.get(lang) or next(iter(_voices.values()))
     buf = io.BytesIO()
-    with _tts_lock:
-        with wave.open(buf, "wb") as wf:
-            voice.synthesize_wav(text, wf)
+    with _tts_lock, wave.open(buf, "wb") as wf:
+        voice.synthesize_wav(text, wf)
     return buf.getvalue(), lang

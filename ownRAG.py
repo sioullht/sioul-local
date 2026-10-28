@@ -1,8 +1,9 @@
 import atexit
 import os
+
 import ollama
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct
+from qdrant_client.models import Distance, PointStruct, VectorParams
 
 # Einstellungen
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

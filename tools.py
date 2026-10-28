@@ -79,7 +79,7 @@ def open_app(app):
   if sys.platform != 'darwin':
     return 'Apps öffnen geht nur auf macOS.'
   # Liste statt Text-Befehl: kein Shell, also kann niemand Befehle einschleusen
-  result = subprocess.run(['open', '-a', APPS[name]], capture_output=True, text=True, timeout=10)
+  result = subprocess.run(['open', '-a', APPS[name]], check=False, capture_output=True, text=True, timeout=10)
   if result.returncode != 0:
     return f'{name} konnte nicht geöffnet werden: {result.stderr.strip()}'
   return f'{name} wurde geöffnet.'

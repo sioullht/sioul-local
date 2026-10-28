@@ -24,14 +24,15 @@ LOG_FILE = os.path.expanduser('~/Library/Logs/sioul.log')
 # Aus dem Dock gestartet gibt es kein Terminal: Ausgaben und Fehler in eine Log-Datei
 # (ansehen z.B. mit: tail -f ~/Library/Logs/sioul.log)
 if not sys.stdout or not sys.stdout.isatty():
-  sys.stdout = sys.stderr = open(LOG_FILE, 'a', encoding='utf-8', buffering=1)
+  # Kein 'with': die Datei soll offen bleiben, solange die App läuft
+  sys.stdout = sys.stderr = open(LOG_FILE, 'a', encoding='utf-8', buffering=1)  # noqa: SIM115
   print(f'\n--- s(i)oul gestartet {time.strftime("%d.%m.%Y %H:%M:%S")} ---')
 
 # Muss vor dem Import von server gesetzt sein: ownRAG.py verbindet Qdrant schon beim Import
 os.environ.setdefault('QDRANT_PATH', os.path.join(BASE_DIR, 'qdrant_data'))
 
-import uvicorn  # noqa: E402
-import webview  # noqa: E402
+import uvicorn
+import webview
 
 
 def ollama_running():
